@@ -6,6 +6,7 @@
 #include <raylib.h>
 #include <raymath.h>
 #include <vector>
+#include <cassert>
 #if defined(PLATFORM_WEB)
 #include <emscripten.h>
 #endif
@@ -16,6 +17,13 @@
 #define INDICATOR_THICKNESS 10
 #define SLOWTICK 24
 #define FASTTICK 12
+
+#define WALL '#'
+#define SNAKE 'S'
+#define PATHWALL '$'
+#define PATH 's'
+#define EMPTY '.'
+#define APPLE 'A'
 
 using namespace std;
 
@@ -75,12 +83,14 @@ struct segment {
     V2 forward; //Direction from previous segment to this segment
     V2 down;    //Direction from this segment to wall it's against
 
+    segment() {}
     segment(V2 newPos, V2 newForward, V2 newDown) : pos(newPos), forward(newForward), down(newDown) {}
 };
 
 struct mainData {
 
     vector<string> map;
+    vector<string> moveMap;
     int mapWidth = 0;
     list<segment> snake;
     list<segment> moveQueue;
@@ -91,13 +101,59 @@ struct mainData {
     bool pause = false;
     RenderTexture2D canvas;
     Vector2 camera = {0, 0};
-    bool cameraX, cameraY;
+    bool moveCameraX, moveCameraY;
+
+    char& at(V2 v) {
+        return map[v.y][v.x];
+    }
+
+    bool ok(V2 v) {
+        return v.y >= 0 && v.y < map.size() && v.x >= 0 && v.x < map[v.y].size();
+    }
 
     // update rate for game logic is 60fps/tickRate()
     int tickRate() {
         if (pause) { return INT_MAX; }
         else if (IsKeyDown(KEY_LEFT_SHIFT)) { return FASTTICK; }
         else { return SLOWTICK; }
+    }
+
+    // Generate which tiles the snake can traverse (adjacent to wall)
+    void makeMoveMap(V2 start) {
+        moveMap = map;
+        list<V2> Q;
+        Q.push_back(start);
+        moveMap[start.y][start.x] = PATHWALL;
+        while (!Q.empty()) {
+            V2 next = *Q.begin();
+            Q.pop_front();
+            for (int i = 0; i < 4; i++) {
+                V2 adj = next + c.cardinal[i];
+                if (ok(adj)) {
+                    if (moveMap[adj.y][adj.x] == WALL) {
+                        moveMap[adj.y][adj.x] = PATHWALL;
+                        Q.push_back(adj);
+                    }
+                    else if (moveMap[adj.y][adj.x] != PATHWALL) {
+                        moveMap[adj.y][adj.x] = PATH;
+                    }
+                }
+            }
+        }
+        for (int row = 0; row < moveMap.size(); row++) {
+            for (int col = 0; col < moveMap[row].size(); col++) {
+                int adjCount = 0;
+                V2 pos(col, row);
+                if (moveMap[pos.y][pos.x] == APPLE || moveMap[pos.y][pos.x] == EMPTY) {
+                    for (V2 diag : {V2(1, 1), V2(1, -1), V2(-1, 1), V2(-1, -1)}) {
+                        V2 adj = pos + diag;
+                        if (ok(adj) && moveMap[adj.y][adj.x] == PATHWALL) {
+                            moveMap[pos.y][pos.x] = PATH;
+                        }
+                    }
+                }
+            }
+        }
     }
 
     void readLevel(string levelName) {
@@ -109,7 +165,7 @@ struct mainData {
         string line;
         while (getline(level, line)) {
             mapWidth = max((int)line.size(), mapWidth);
-            int snakePos = line.find('S');
+            int snakePos = line.find(SNAKE);
             if (snakePos != string::npos) {
                 snake.push_front(segment(V2(snakePos, map.size()), V2(1, 0), V2(0, 0)));
             }
@@ -117,8 +173,67 @@ struct mainData {
         }
         level.close();
         canvas = LoadRenderTexture(mapWidth * GRID, map.size() * GRID);
-        cameraX = mapWidth * GRID > WIDTH;
-        cameraY = map.size() * GRID > HEIGHT;
+        moveCameraX = mapWidth * GRID > WIDTH;
+        moveCameraY = map.size() * GRID > HEIGHT;
+        for (int i = 0; i < 4; i++) {
+            V2 adj = snake.begin()->pos + c.cardinal[i];
+            if (at(adj) == WALL) {
+                makeMoveMap(adj);
+                snake.begin()->down = c.cardinal[i];
+                snake.begin()->forward = c.get(snake.begin()->down, 1);
+            }
+        }
+    }
+
+    void render(bool debug) {
+        BeginTextureMode(canvas);
+        ClearBackground(BLACK);
+        // draw map
+        for (int row = 0; row < map.size(); row++) {
+            for (int col = 0; col < map[row].size(); col++) {
+                if (map[row][col] == WALL) {
+                    DrawRectangle(GRID * col, GRID * row, GRID, GRID, GRAY);
+                }
+                if (debug) {
+                    if (moveMap[row][col] == PATHWALL) {
+                        DrawRectangle(GRID * col, GRID * row, GRID, GRID, BLUE);
+                    }
+                    else if (moveMap[row][col] == PATH) {
+                        DrawRectangle(GRID * col, GRID * row, GRID, GRID, GREEN);
+                    }
+                }
+                if (map[row][col] == APPLE) {
+                    DrawCircle((col + 0.5) * GRID, (row + 0.5) * GRID, GRID / 2, RED);
+                }
+            }
+        }
+        // draw snake
+        for (segment & s : snake) {
+            Vector2 center = {(s.pos.x + 0.5) * GRID, (s.pos.y + 0.5) * GRID};
+            DrawCircleV(center, GRID / 2, YELLOW);
+            if (debug) {
+                Vector2 down = Vector2Add(center, Vector2Scale((Vector2){s.down.x, s.down.y}, GRID));
+                DrawLineV(center, down, GREEN);
+                Vector2 forward = Vector2Add(center, Vector2Scale((Vector2){s.forward.x, s.forward.y}, GRID));
+                DrawLineV(center, forward, RED);
+            }
+            // draw indicator of which side we are on
+            for (V2 adj : {s.down, s.forward}) {
+                if ((adj.x == 0) && (adj.y == 0)) continue;
+                int w = adj.x != 0 ? INDICATOR_THICKNESS : GRID;
+                int h = adj.y != 0 ? INDICATOR_THICKNESS : GRID;
+
+                V2 logicalPos = s.pos + adj;
+                // draw the indicator on the inside of the wall we are on
+                int x = logicalPos.x * GRID + (adj.x < 0 ? GRID - INDICATOR_THICKNESS : 0);
+                int y = logicalPos.y * GRID + (adj.y < 0 ? GRID - INDICATOR_THICKNESS : 0);
+                // only draw on tiles that would be floor
+                if (map[logicalPos.y][logicalPos.x] == WALL) {
+                    DrawRectangle(x, y , w, h, BLUE);
+                }
+            }
+        }
+        EndTextureMode();
     }
 
     void mainLoop() {
@@ -132,74 +247,66 @@ struct mainData {
                 moveQueue.pop_front();
             }
             else {  //Wall following
+                int score = 0;
+                segment next;
                 for (int i = -1; i < 3; i++) {
                     V2 nextForward = c.get(snake.begin()->forward, i);
-                    V2 nextPos = snake.begin()->pos + nextForward;
                     V2 nextDown = c.get(nextForward, -1);
-                    if (map[nextPos.y][nextPos.x] != '#') {
-                        segment next(nextPos, nextForward, nextDown);
-                        snake.push_front(next);
-                        break;
+                    V2 nextPos = snake.begin()->pos + nextForward;
+                    V2 nextWall = nextPos + nextDown;
+                    if (moveMap[nextPos.y][nextPos.x] == PATH) {
+                        // +16 points for not going backwards
+                        int newScore = i != 2 ? 16 : 0;
+                        // +8 points for not overlapping previous snake
+                        newScore += 8;
+                        for (segment& otherS : snake) {
+                            if (otherS.pos == nextPos) {
+                                newScore -= 8;
+                            }
+                        }
+                        // *4 points for adhering to wall
+                        newScore += moveMap[nextWall.y][nextWall.x] == PATHWALL ? 4 : 0;
+                        if (newScore > score) {
+                            next = segment(nextPos, nextForward, nextDown);
+                            score = newScore;
+                        }
                     }
                 }
+                assert(score > 0);
+                snake.push_front(next);
             }
             V2 head = snake.begin()->pos;
             // found apple, add a new segment
-            if (map[head.y][head.x] == 'A') {
+            if (map[head.y][head.x] == APPLE) {
                 snakeSize++;
+                map[head.y][head.x] = EMPTY;
                 // remove apple from map
-                map[head.y][head.x] = '.';
             }
             // Remove any extra segments (Every tick unless found apple)
             while (snake.size() > snakeSize) {
+                V2 tail = snake.rbegin()->pos;
                 snake.pop_back();
             }
-            BeginTextureMode(canvas);
-            ClearBackground(BLACK);
-            // draw map
-            for (int row = 0; row < map.size(); row++) {
-                for (int col = 0; col < map[row].size(); col++) {
-                    if (map[row][col] == '#') {
-                        DrawRectangle(GRID * col, GRID * row, GRID, GRID, GRAY);
-                    }
-                    if (map[row][col] == 'A') {
-                        DrawCircle((col + 0.5) * GRID, (row + 0.5) * GRID, GRID / 2, RED);
-                    }
-                }
-            }
-            // draw snake
-            int segCount = 0;
-            for (segment & s : snake) {
-                DrawCircle((s.pos.x + 0.5) * GRID, (s.pos.y + 0.5) * GRID, GRID / 2, Fade(YELLOW, float(snakeSize - segCount) / snakeSize));
-                // draw indicator of which side we are on
-                for (V2 adj : {s.down, s.forward}) {
-                    if ((adj.x == 0) && (adj.y == 0)) continue;
-                    int w = adj.x != 0 ? INDICATOR_THICKNESS : GRID;
-                    int h = adj.y != 0 ? INDICATOR_THICKNESS : GRID;
-
-                    V2 logicalPos = s.pos + adj;
-                    // draw the indicator on the inside of the wall we are on
-                    int x = logicalPos.x * GRID + (adj.x < 0 ? GRID - INDICATOR_THICKNESS : 0);
-                    int y = logicalPos.y * GRID + (adj.y < 0 ? GRID - INDICATOR_THICKNESS : 0);
-                    // only draw on tiles that would be floor
-                    if (map[logicalPos.y][logicalPos.x] == '#') {
-                        DrawRectangle(x, y , w, h, BLUE);
-                    }
-                }
-            }
-            EndTextureMode();
+            render(true);
         }
         //DO THE FOLLOWING AT 60FPS
 
-        if (IsKeyPressed(KEY_SPACE) && moveQueue.empty()) {
+        V2 head = snake.begin()->pos;
+        char downWall = at(head + snake.begin()->down);
+        if (IsKeyPressed(KEY_SPACE) && moveQueue.empty() && (downWall == WALL)) {
             //Crossing to opposite wall
-            V2 pos = snake.begin()->pos;
             V2 up = c.get(snake.begin()->down, 2);
             bool canCross = false;
             for (int i = 1; i < snakeSize + 1; i++) {
-                V2 swapWall = pos + up * i;
-                if (map[swapWall.y][swapWall.x] == '#') {
+                V2 swapWall = head + up * i;
+                for (segment& s : snake) {
+                    if (s.pos == swapWall) {
+                        break;
+                    }
+                }
+                if (map[swapWall.y][swapWall.x] == WALL) {
                     canCross = true;
+                    makeMoveMap(swapWall);
                     //Following opposite wall now
                     c.reverse();
                     break;
@@ -216,15 +323,16 @@ struct mainData {
         if (IsKeyPressed(KEY_BACKSPACE)) {
             // toggle pause
             pause = !pause;
+            render(true);
         }
         //Update camera position to keep snake head near center of screen
         V2 pos = snake.begin()->pos;
         float cameraSpeed = (float)GRID / tickRate();
         Vector2 targetCamera = camera;
-        if (cameraX) {
+        if (moveCameraX) {
             targetCamera.x = min(mapWidth * GRID - WIDTH, max(0, int((pos.x + 0.5) * GRID - WIDTH / 2)));
         }
-        if (cameraY) {
+        if (moveCameraY) {
             targetCamera.y = min((int)map.size() * GRID - HEIGHT, max(0, int((pos.y + 0.5) * GRID - HEIGHT / 2)));
         }
         if (Vector2Length(Vector2Subtract(targetCamera, camera)) < cameraSpeed) {
