@@ -255,13 +255,14 @@ struct mainData {
                     V2 nextPos = snake.begin()->pos + nextForward;
                     V2 nextWall = nextPos + nextDown;
                     if (moveMap[nextPos.y][nextPos.x] == PATH) {
-                        // +16 points for not going backwards
-                        int newScore = i != 2 ? 16 : 0;
+                        // +8 points for not going backwards
+                        int newScore = i != 2 ? 8 : 0;
                         // +8 points for not overlapping previous snake
                         newScore += 8;
                         for (segment& otherS : snake) {
                             if (otherS.pos == nextPos) {
                                 newScore -= 8;
+                                break;
                             }
                         }
                         // *4 points for adhering to wall
@@ -292,8 +293,7 @@ struct mainData {
         //DO THE FOLLOWING AT 60FPS
 
         V2 head = snake.begin()->pos;
-        char downWall = at(head + snake.begin()->down);
-        if (IsKeyPressed(KEY_SPACE) && moveQueue.empty() && (downWall == WALL)) {
+        if (IsKeyPressed(KEY_SPACE) && moveQueue.empty()) {
             //Crossing to opposite wall
             V2 up = c.get(snake.begin()->down, 2);
             bool canCross = false;
@@ -326,21 +326,15 @@ struct mainData {
             render(true);
         }
         //Update camera position to keep snake head near center of screen
-        V2 pos = snake.begin()->pos;
-        float cameraSpeed = (float)GRID / tickRate();
         Vector2 targetCamera = camera;
         if (moveCameraX) {
-            targetCamera.x = min(mapWidth * GRID - WIDTH, max(0, int((pos.x + 0.5) * GRID - WIDTH / 2)));
+            targetCamera.x = min(mapWidth * GRID - WIDTH, max(0, int((head.x + 0.5) * GRID - WIDTH / 2)));
         }
         if (moveCameraY) {
-            targetCamera.y = min((int)map.size() * GRID - HEIGHT, max(0, int((pos.y + 0.5) * GRID - HEIGHT / 2)));
+            targetCamera.y = min((int)map.size() * GRID - HEIGHT, max(0, int((head.y + 0.5) * GRID - HEIGHT / 2)));
         }
-        if (Vector2Length(Vector2Subtract(targetCamera, camera)) < cameraSpeed) {
-            camera = targetCamera;
-        }
-        else {
-            camera = Vector2Add(camera, Vector2Scale(Vector2Normalize(Vector2Subtract(targetCamera, camera)), cameraSpeed));
-        }
+        Vector2 cameraMove = Vector2Subtract(targetCamera, camera);
+        camera = Vector2Add(camera, Vector2Scale(cameraMove, 0.02));
         ClearBackground(BLACK);
         Texture* t = &canvas.texture;
         Rectangle source = {0, 0, (float)t->width, -1 * (float)t->height};
