@@ -1,9 +1,10 @@
-#include <iostream>
-#include <fstream>
-#include <raylib.h>
-#include <list>
-#include <vector>
 #include <algorithm>
+#include <climits>
+#include <fstream>
+#include <iostream>
+#include <list>
+#include <raylib.h>
+#include <vector>
 #if defined(PLATFORM_WEB)
 #include <emscripten.h>
 #endif
@@ -11,8 +12,9 @@
 #define WIDTH 800
 #define HEIGHT 600
 #define GRID 40
-// tick rate is 
-#define TICK_RATE 20
+#define INDICATOR_THICKNESS 10
+// update rate for game logic is 60fps/TICK_RATE
+static int TICK_RATE = 12;
 
 using namespace std;
 
@@ -84,8 +86,7 @@ struct mainData {
     int snakeSize = 1;
     int tickCount = 0;
     compass c;
-    Color colors[2] = {BLUE, YELLOW};
-    int color = 0;
+    bool pause = false;
 
     void readLevel(string levelName) {
         ifstream level(levelName);
@@ -120,7 +121,20 @@ struct mainData {
         }
         // draw snake
         for (segment & s : snake) {
-            DrawCircle((s.pos.x + 0.5) * GRID, (s.pos.y + 0.5) * GRID, GRID / 2, colors[color % 2]);
+            DrawCircle((s.pos.x + 0.5) * GRID, (s.pos.y + 0.5) * GRID, GRID / 2, YELLOW);
+            // draw indicator of which side we are on
+            if ((s.down.x == 0) && (s.down.y == 0)) continue;
+            int w = s.down.x != 0 ? INDICATOR_THICKNESS : GRID;
+            int h = s.down.y != 0 ? INDICATOR_THICKNESS : GRID;
+
+            V2 logicalPos = s.pos + s.down;
+            // draw the indicator on the inside of the wall we are on
+            int x = logicalPos.x * GRID + (s.down.x < 0 ? GRID - INDICATOR_THICKNESS : 0);
+            int y = logicalPos.y * GRID + (s.down.y < 0 ? GRID - INDICATOR_THICKNESS : 0);
+            // only draw on tiles that would be floor
+            if (map[logicalPos.y][logicalPos.x] == '#') {
+                DrawRectangle(x, y , w, h, BLUE);
+            }
         }
         if (tickCount % TICK_RATE == 0) {
             if (!moveQueue.empty()) {
@@ -166,7 +180,6 @@ struct mainData {
                     if (map[swapWall.y][swapWall.x] == '#') {
                         canCross = true;
                         c.reverse();
-                        color++;
                         break;
                     }
                     else {
@@ -177,6 +190,17 @@ struct mainData {
                     moveQueue.clear();
                 }
 //            }
+        }
+
+        // debug: pause the game if we press backspace
+        if (IsKeyPressed(KEY_BACKSPACE)) {
+            // toggle pause
+            pause = !pause;
+            if (pause) {
+                TICK_RATE = INT_MAX;
+            } else {
+                TICK_RATE = 10;
+            }
         }
 
         EndDrawing();
