@@ -45,6 +45,10 @@ struct V2 {
     }
 };
 
+Color fade(Color c, float amt) {
+    return (Color){c.r, c.g, c.b, c.a * amt};
+}
+
 struct spider {
 
 };
@@ -120,20 +124,23 @@ struct mainData {
             }
         }
         // draw snake
+        int segCount = 0;
         for (segment & s : snake) {
-            DrawCircle((s.pos.x + 0.5) * GRID, (s.pos.y + 0.5) * GRID, GRID / 2, YELLOW);
+            DrawCircle((s.pos.x + 0.5) * GRID, (s.pos.y + 0.5) * GRID, GRID / 2, fade(YELLOW, float(snakeSize - segCount) / snakeSize));
             // draw indicator of which side we are on
-            if ((s.down.x == 0) && (s.down.y == 0)) continue;
-            int w = s.down.x != 0 ? INDICATOR_THICKNESS : GRID;
-            int h = s.down.y != 0 ? INDICATOR_THICKNESS : GRID;
+            for (V2 adj : {s.down, s.forward}) {
+                if ((adj.x == 0) && (adj.y == 0)) continue;
+                int w = adj.x != 0 ? INDICATOR_THICKNESS : GRID;
+                int h = adj.y != 0 ? INDICATOR_THICKNESS : GRID;
 
-            V2 logicalPos = s.pos + s.down;
-            // draw the indicator on the inside of the wall we are on
-            int x = logicalPos.x * GRID + (s.down.x < 0 ? GRID - INDICATOR_THICKNESS : 0);
-            int y = logicalPos.y * GRID + (s.down.y < 0 ? GRID - INDICATOR_THICKNESS : 0);
-            // only draw on tiles that would be floor
-            if (map[logicalPos.y][logicalPos.x] == '#') {
-                DrawRectangle(x, y , w, h, BLUE);
+                V2 logicalPos = s.pos + adj;
+                // draw the indicator on the inside of the wall we are on
+                int x = logicalPos.x * GRID + (adj.x < 0 ? GRID - INDICATOR_THICKNESS : 0);
+                int y = logicalPos.y * GRID + (adj.y < 0 ? GRID - INDICATOR_THICKNESS : 0);
+                // only draw on tiles that would be floor
+                if (map[logicalPos.y][logicalPos.x] == '#') {
+                    DrawRectangle(x, y , w, h, BLUE);
+                }
             }
         }
         if (tickCount % TICK_RATE == 0) {
@@ -166,30 +173,25 @@ struct mainData {
             }
         }
         if (IsKeyPressed(KEY_SPACE)) {
+            //Crossing gaps using snake body
             V2 pos = snake.begin()->pos;
             V2 up = c.get(snake.begin()->down, 2);
-            //V2 swapWall = snake.begin()->pos + c.get(snake.begin()->down, 2);
-/*            if (map[swapWall.y][swapWall.x] == '#') {
-                c.reverse();
-                color++;
+            bool canCross = false;
+            for (int i = 1; i < snakeSize + 1; i++) {
+                V2 swapWall = pos + up * i;
+                if (map[swapWall.y][swapWall.x] == '#') {
+                    canCross = true;
+                    //Following opposite wall now
+                    c.reverse();
+                    break;
+                }
+                else {
+                    moveQueue.push_back(segment(swapWall, snake.begin()->forward, V2()));
+                }
             }
-            else {  //Crossing gaps using snake body*/
-                bool canCross = false;
-                for (int i = 1; i < snakeSize + 1; i++) {
-                    V2 swapWall = pos + up * i;
-                    if (map[swapWall.y][swapWall.x] == '#') {
-                        canCross = true;
-                        c.reverse();
-                        break;
-                    }
-                    else {
-                        moveQueue.push_back(segment(swapWall, V2(), V2()));
-                    }
-                }
-                if (!canCross) {
-                    moveQueue.clear();
-                }
-//            }
+            if (!canCross) {
+                moveQueue.clear();
+            }
         }
 
         // debug: pause the game if we press backspace
