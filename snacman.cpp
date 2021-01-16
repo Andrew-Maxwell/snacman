@@ -12,7 +12,7 @@
 #define HEIGHT 600
 #define GRID 40
 // tick rate is 
-#define TICK_RATE 10
+#define TICK_RATE 20
 
 using namespace std;
 
@@ -36,6 +36,10 @@ struct V2 {
 
     V2 operator-(const V2& other) {
         return V2(x - other.x, y - other.y);
+    }
+
+    V2 operator*(int scalar) {
+        return V2(x * scalar, y * scalar);
     }
 };
 
@@ -75,6 +79,7 @@ struct mainData {
 
     vector<string> map;
     list<segment> snake;
+    list<segment> moveQueue;
     list<spider> spiders;
     int snakeSize = 1;
     int tickCount = 0;
@@ -118,33 +123,60 @@ struct mainData {
             DrawCircle((s.pos.x + 0.5) * GRID, (s.pos.y + 0.5) * GRID, GRID / 2, colors[color % 2]);
         }
         if (tickCount % TICK_RATE == 0) {
-            for (int i = -1; i < 3; i++) {
-                V2 nextForward = c.get(snake.begin()->forward, i);
-                V2 nextPos = snake.begin()->pos + nextForward;
-                V2 nextDown = c.get(nextForward, -1);
-                if (map[nextPos.y][nextPos.x] != '#') {
-                    // found apple, add a new segment
-                    if (map[nextPos.y][nextPos.x] == 'A') {
-                        snakeSize++;
-                        snake.push_back(segment(nextPos, nextForward, nextDown));
-                        // remove apple from map
-                        map[nextPos.y][nextPos.x] = ' ';
+            if (!moveQueue.empty()) {
+                snake.push_front(*moveQueue.begin());
+                moveQueue.pop_front();
+            }
+            else {
+                for (int i = -1; i < 3; i++) {
+                    V2 nextForward = c.get(snake.begin()->forward, i);
+                    V2 nextPos = snake.begin()->pos + nextForward;
+                    V2 nextDown = c.get(nextForward, -1);
+                    if (map[nextPos.y][nextPos.x] != '#') {
+                        segment next(nextPos, nextForward, nextDown);
+                        snake.push_front(next);
+                        break;
                     }
-                    segment next(nextPos, nextForward, nextDown);
-                    snake.push_front(next);
-                    break;
                 }
             }
+            V2 head = snake.begin()->pos;
+            // found apple, add a new segment
+            if (map[head.y][head.x] == 'A') {
+                snakeSize++;
+                // remove apple from map
+                map[head.y][head.x] = '.';
+            }
+            // Remove any extra segments (Every tick unless found apple)
             while (snake.size() > snakeSize) {
                 snake.pop_back();
             }
         }
         if (IsKeyPressed(KEY_SPACE)) {
-            V2 swapWall = snake.begin()->pos + c.get(snake.begin()->down, 2);
-            if (map[swapWall.y][swapWall.x] == '#') {
+            V2 pos = snake.begin()->pos;
+            V2 up = c.get(snake.begin()->down, 2);
+            //V2 swapWall = snake.begin()->pos + c.get(snake.begin()->down, 2);
+/*            if (map[swapWall.y][swapWall.x] == '#') {
                 c.reverse();
                 color++;
             }
+            else {  //Crossing gaps using snake body*/
+                bool canCross = false;
+                for (int i = 1; i < snakeSize + 1; i++) {
+                    V2 swapWall = pos + up * i;
+                    if (map[swapWall.y][swapWall.x] == '#') {
+                        canCross = true;
+                        c.reverse();
+                        color++;
+                        break;
+                    }
+                    else {
+                        moveQueue.push_back(segment(swapWall, V2(), V2()));
+                    }
+                }
+                if (!canCross) {
+                    moveQueue.clear();
+                }
+//            }
         }
 
         EndDrawing();
