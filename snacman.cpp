@@ -50,7 +50,12 @@ struct compass {
     }
 
     V2 get(V2 current, int offset) {
-        int index = find<V2>(cardinal + 0, cardinal + 4, current);
+        int index = -1;
+        for (int i = 0; i < 4; i++) {
+            if (cardinal[i] == current) {
+                index = i;
+            }
+        }
         index = ((index + offset * clockwise) + 4) % 4;
         return cardinal[index];
     }
@@ -80,7 +85,7 @@ struct mainData {
         while (getline(level, line)) {
             int snakePos = line.find('S');
             if (snakePos != string::npos) {
-                snake.push_front(segment(V2(snakePos, map.size()), V2(0, 0));
+                snake.push_front(segment(V2(snakePos, map.size()), V2(0, 0)));
             }
             map.push_back(line);
         }
