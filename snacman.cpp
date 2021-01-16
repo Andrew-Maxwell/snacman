@@ -63,9 +63,10 @@ struct compass {
 
 struct segment {
     V2 pos;
-    V2 dir;
+    V2 forward;
+    V2 down;
 
-    segment(V2 newPos, V2 newDir) : pos(newPos), dir(newDir) {}
+    segment(V2 newPos, V2 newForward, V2 newDown) : pos(newPos), forward(newForward), down(newDown) {}
 };
 
 struct mainData {
@@ -86,7 +87,7 @@ struct mainData {
         while (getline(level, line)) {
             int snakePos = line.find('S');
             if (snakePos != string::npos) {
-                snake.push_front(segment(V2(snakePos, map.size()), V2(0, 0)));
+                snake.push_front(segment(V2(snakePos, map.size()), V2(0, 0), V2(0, 0)));
             }
             map.push_back(line);
         }
@@ -106,16 +107,18 @@ struct mainData {
         for (segment & s : snake) {
             DrawCircle((s.pos.x + 0.5) * GRID, (s.pos.y + 0.5) * GRID, GRID / 2, YELLOW);
         }
-        segment next = *(snake.begin());
-        for (int i = 0; i < 4; i++) {
-            V2 nextDir = c.get(next.dir, i);
-            V2 nextPos = next.pos + nextDir;
+        for (int i = -1; i < 3; i++) {
+            V2 nextForward = c.get(snake.begin()->forward, i);
+            V2 nextPos = snake.begin()->pos + nextForward;
             if (map[nextPos.y][nextPos.x] != '#') {
-                next.pos = nextPos;
-                next.dir = c.get(nextDir, -1);
+                V2 nextDown = c.get(nextForward, -1);
+                segment next(nextPos, nextForward, nextDown);
                 snake.push_front(next);
                 break;
             }
+        }
+        if (IsKeyPressed(KEY_SPACE)) {
+            c.reverse();
         }
         while (snake.size() > snakeSize) {
             snake.pop_back();
@@ -141,9 +144,9 @@ int main(int argc, char** argv) {
     InitWindow(WIDTH, HEIGHT, "snacman");
     
 #if defined(PLATFORM_WEB)
-    emscripten_set_main_loop(doEverything, 60, 1);
+    emscripten_set_main_loop(doEverything, 6, 1);
 #else
-    SetTargetFPS(60);
+    SetTargetFPS(6);
     while (!WindowShouldClose()) {
         everything.mainLoop();
     }
