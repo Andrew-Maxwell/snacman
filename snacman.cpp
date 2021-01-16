@@ -42,7 +42,7 @@ struct spider {
 };
 
 struct compass {
-    int clockwise = 1;
+    int clockwise = -1;
     V2 cardinal[4] = {V2(0, -1), V2(1, 0), V2(0, 1), V2(-1, 0)};
 
     void reverse() {
@@ -74,6 +74,7 @@ struct mainData {
     list<segment> snake;
     list<spider> spiders;
     int snakeSize = 1;
+    compass c;
 
     void readLevel(string levelName) {
         ifstream level(levelName);
@@ -104,6 +105,20 @@ struct mainData {
         }
         for (segment & s : snake) {
             DrawCircle((s.pos.x + 0.5) * GRID, (s.pos.y + 0.5) * GRID, GRID / 2, YELLOW);
+        }
+        segment next = *(snake.begin());
+        for (int i = 0; i < 4; i++) {
+            V2 nextDir = c.get(next.dir, i);
+            V2 nextPos = next.pos + nextDir;
+            if (map[nextPos.y][nextPos.x] != '#') {
+                next.pos = nextPos;
+                next.dir = c.get(nextDir, -1);
+                snake.push_front(next);
+                break;
+            }
+        }
+        while (snake.size() > snakeSize) {
+            snake.pop_back();
         }
         EndDrawing();
     }
