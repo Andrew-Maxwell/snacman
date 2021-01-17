@@ -8,6 +8,7 @@
 #include <unordered_map>
 #include <vector>
 #include <map>
+#include <set>
 
 #include "raylib.h"
 #include "raymath.h"
@@ -143,8 +144,8 @@ struct critter {
         while (!Q.empty()) {
             V2 next = *Q.begin();
             Q.pop_front();
-            for (int i = 0; i < 4; i++) {
-                V2 adj = next + c.cardinal[i];
+            for (V2 plus : {V2(1, 0), V2(1, 1), V2(1, -1), V2(0, 1), V2(0, -1), V2(-1, 0), V2(-1, -1), V2(-1, 1)}) {
+                V2 adj = next + plus;
                 if (ok(adj)) {
                     if (moveMap[adj.y][adj.x] == WALL) {
                         moveMap[adj.y][adj.x] = PATHWALL;
@@ -268,6 +269,9 @@ struct snake : public critter {
                     if (s.pos == swapWall) {
                         break;
                     }
+                }
+                if (!ok(swapWall)) {
+                    break;
                 }
                 if (map[swapWall.y][swapWall.x] == WALL) {
                     canCross = true;
@@ -433,14 +437,14 @@ struct spider : public critter {
         segments.push_front(getNextSegment());
     }
 
-    void doTick(vector<string>& map) {
+    bool doTick(vector<string>& map) {
         //Spider has 2 segments (to prevent passing through length-1 snake.)
         // Check if either of those segments touching snake.
         V2 head = segments.begin()->pos;
         V2 tail = segments.rbegin()->pos;
         if (map[head.y][head.x] == SNAKE || map[tail.y][tail.x] == SNAKE) {
             cout << "You got caught by a spider!\n";
-            exit(0);
+            return true;
         }
         // Use DFS to search for snake markings
         list<V2> Q;
@@ -466,6 +470,7 @@ struct spider : public critter {
                 }
             }
         }
+        return false;
     }
 
     void render(bool debug) {
@@ -545,6 +550,100 @@ struct mainData {
         dirtHorizontal = LoadTexture("assets/dirt_horizontal.png");
     }
 
+    void generateIsland(V2 start, int size, list<V2>& newSpiders) {
+        list<V2> fringe;
+        set<int> thisIsland;
+        fringe.push_back(start);
+        for (int i = 0; i < size; i++) {
+            int select = GetRandomValue(0, fringe.size() - 1);
+            auto iter = fringe.begin();
+            for (int j = 0; j < select; j++) {
+                iter++;
+            }
+            V2 here = *iter;
+            fringe.erase(iter);
+            map[here.y][here.x] = WALL;
+            thisIsland.insert(here.hash());
+            for (V2 adj : {V2(-1, 0), V2(1, 0), V2(0, 1), V2(0, -1)}) {
+                V2 there = here + adj;
+                if (!thisIsland.count(there.hash())) {
+                    if (at(there) == WALL) {
+                        for (V2 adj2 : {V2(-1, 0), V2(1, 0), V2(0, 1), V2(0, -1)}) {
+                            V2 erase = here + adj2;
+                            map[erase.y][erase.x] = EMPTY;
+                        }
+                    }
+                    else {
+                        fringe.push_back(there);
+                    }
+                }
+            }
+            if (fringe.empty()) {
+                break;
+            }
+        }
+        int numApples = GetRandomValue(size / 30, size / 15);
+        totalApples += numApples;
+        for (int i = 0; i < numApples; i++) {
+            int select = GetRandomValue(0, fringe.size() - 1);
+            auto iter = fringe.begin();
+            for (int j = 0; j < select; j++) {
+                iter++;
+            }
+            V2 here = *iter;
+            map[here.y][here.x] = APPLE;
+        }
+        if (GetRandomValue(0, 1) == 1) {
+            int select = GetRandomValue(0, fringe.size() - 1);
+            auto iter = fringe.begin();
+            for (int j = 0; j < select; j++) {
+                iter++;
+            }
+            V2 here = *iter;
+            newSpiders.push_back(here);
+        }
+    }
+
+    void generateLevel() {
+        mapWidth = 100;
+        map = vector<string>(100, string(100, EMPTY));
+        V2 newSnakeHead;
+        list<V2> newSpiders;
+
+        int numIslands = GetRandomValue(20, 35);
+        for (int i = 0; i < numIslands; i++) {
+            V2 start(GetRandomValue(20, 80), GetRandomValue(20, 80));
+            generateIsland(start, GetRandomValue(75, 200), newSpiders);
+        }
+        bool foundStart = false;
+        while (!foundStart) {
+            newSnakeHead = V2(GetRandomValue(10, 90), GetRandomValue(10, 90));
+            if (at(newSnakeHead) != EMPTY) {
+                continue;
+            }
+            for (V2 adj : {V2(1, 0), V2(-1, 0), V2(0, 1), V2(0, -1)}) {
+                if (at(newSnakeHead + adj) == WALL) {
+                    foundStart = true;
+                }
+            }
+        }
+        canvas = LoadRenderTexture(mapWidth * GRID, map.size() * GRID);
+        moveCameraX = moveCameraY = true;
+        s = snake(newSnakeHead, map);
+        for (V2& pos : newSpiders) {
+            if (at(pos) == EMPTY) {
+                for (V2 adj : {V2(1, 0), V2(-1, 0), V2(0, 1), V2(0, -1)}) {
+                    if (at(pos + adj) == WALL) {
+                        spiders.push_back(spider(pos, map));
+                    }
+                }
+            }
+        }
+        dirt = LoadTexture("assets/dirt.png");
+        dirtHorizontal = LoadTexture("assets/dirt_horizontal.png");
+    }
+
+
     void render(bool debug) {
         BeginTextureMode(canvas);
         ClearBackground(BLACK);
@@ -611,6 +710,10 @@ struct mainData {
             DrawRectangle(0, 0, WIDTH, HEIGHT, (Color){0, 0, 0, 100});
             DrawText("You got all the yerbs.\nYou won!", GRID, GRID, 1.3 * GRID, WHITE);
         }
+        else if (s.snakeSize < 1) {
+            DrawRectangle(0, 0, WIDTH, HEIGHT, (Color){0, 0, 0, 100});
+            DrawText("Ow, oof, my grades!", GRID, GRID, 1.3 * GRID, WHITE);
+        }
         EndTextureMode();
     }
 
@@ -618,9 +721,17 @@ struct mainData {
         BeginDrawing();
         //DO THE FOLLOWING AT TICK RATE
         if (tickCount % tickRate() == 0) {
-            if (s.snakeSize != totalApples + 1) {
-                for (spider& enemy : spiders) {
-                    enemy.doTick(map);
+            if (s.snakeSize != totalApples + 1 && s.snakeSize >= 1) {
+                auto spider = spiders.begin();
+                while (spider != spiders.end()) {
+                    if (spider->doTick(map)) {
+                        s.snakeSize -= 3;
+                        totalApples -= 3;
+                        spider = spiders.erase(spider);
+                    }
+                    else {
+                        spider++;
+                    }
                 }
                 s.doTick(map);
             }
@@ -641,6 +752,9 @@ struct mainData {
         }
         if (moveCameraY) {
             targetCamera.y = min((int)map.size() * GRID - HEIGHT, max(0, int((s.head().y + 0.5) * GRID - HEIGHT / 2)));
+        }
+        if (tickCount == 0) {
+            camera = targetCamera;
         }
         Vector2 cameraMove = Vector2Subtract(targetCamera, camera);
         camera = Vector2Add(camera, Vector2Scale(cameraMove, 0.02));
@@ -664,13 +778,18 @@ void doEverything() {
 
 int main(int argc, char** argv) {
 
-    if (argc != 2) {
+    if (argc > 2) {
         cerr << "Usage: " << argv[0] << "<level file>\n";
         exit(EXIT_FAILURE);
     }
 
     InitWindow(WIDTH, HEIGHT, "snacman");
-    everything.readLevel(argv[1]);
+    if (argc == 2) {
+        everything.readLevel(argv[1]);
+    }
+    else {
+        everything.generateLevel();
+    }
 #if defined(PLATFORM_WEB)
     emscripten_set_main_loop(doEverything, 6, 1);
 #else
