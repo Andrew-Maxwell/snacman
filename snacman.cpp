@@ -107,7 +107,8 @@ struct segment {
     int clockwise;
 
     segment() {}
-    segment(V2 newPos, V2 newForward, V2 newDown) : pos(newPos), forward(newForward), down(newDown) {}
+    segment(V2 newPos, V2 newForward, V2 newDown, int newClockwise) :
+        pos(newPos), forward(newForward), down(newDown), clockwise(newClockwise) {}
 };
 
 struct critter {
@@ -117,16 +118,16 @@ struct critter {
 
     critter() {}
 
-    critter(V2 head, vector<string>& map) {
-        segments.push_front(segment(head, V2(0, 0), V2(0, 0)));
+    critter(V2 pos, vector<string>& map) {
+        segment newHead;
         for (int i = 0; i < 4; i++) {
-            V2 adj = segments.begin()->pos + c.cardinal[i];
+            V2 adj = pos + c.cardinal[i];
             if (map[adj.y][adj.x] == WALL) {
+                newHead = segment(pos, c.get(c.cardinal[i], 1), c.cardinal[i], c.clockwise);
                 makeMoveMap(adj, map);
-                segments.begin()->down = c.cardinal[i];
-                segments.begin()->forward = c.get(segments.begin()->down, 1);
             }
         }
+        segments.push_front(newHead);
     }
 
     bool ok(V2 v) {
@@ -197,8 +198,7 @@ struct critter {
                 // +1 points for adhering to wall
                 newScore += moveMap[nextWall.y][nextWall.x] == PATHWALL ? 1 : 0;
                 if (newScore > score) {
-                    next = segment(nextPos, nextForward, nextDown);
-                    next.clockwise = c.clockwise;
+                    next = segment(nextPos, nextForward, nextDown, c.clockwise);
                     score = newScore;
                 }
             }
@@ -277,8 +277,7 @@ struct snake : public critter {
                     break;
                 }
                 else {
-                    segment next(swapWall, up, up);
-                    next.clockwise = c.clockwise;
+                    segment next(swapWall, up, up, c.clockwise);
                     moveQueue.push_back(next);
                 }
             }
@@ -610,19 +609,22 @@ struct mainData {
         for (spider& enemy : spiders) {
             enemy.render(debug);
         }
+        if (s.snakeSize == totalApples + 1) {
+            DrawRectangle(0, 0, WIDTH, HEIGHT, (Color){0, 0, 0, 100});
+            DrawText("You got all the yerbs.\nYou won!", GRID, GRID, 1.3 * GRID, WHITE);
+        }
         EndTextureMode();
     }
 
     void mainLoop() {
         BeginDrawing();
         //DO THE FOLLOWING AT TICK RATE
-        if (tickCount % tickRate() == 0 && s.snakeSize != totalApples) {
-            for (spider& enemy : spiders) {
-                enemy.doTick(map);
-            }
-            s.doTick(map);
-            if (s.snakeSize == totalApples) {
-                cout << "You got all the apples, you won!";
+        if (tickCount % tickRate() == 0) {
+            if (s.snakeSize != totalApples + 1) {
+                for (spider& enemy : spiders) {
+                    enemy.doTick(map);
+                }
+                s.doTick(map);
             }
             render(false);
         }
