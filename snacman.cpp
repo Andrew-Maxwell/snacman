@@ -608,7 +608,8 @@ struct mainData {
             enemy.render(debug);
         }
         if (s.snakeSize == totalApples + 1) {
-            DrawText("You got all the yerbs.\nYou won!", GRID, GRID, 2 * GRID, WHITE);
+            DrawRectangle(0, 0, WIDTH, HEIGHT, (Color){0, 0, 0, 100});
+            DrawText("You got all the yerbs.\nYou won!", GRID, GRID, 1.3 * GRID, WHITE);
         }
         EndTextureMode();
     }
