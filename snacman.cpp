@@ -712,14 +712,6 @@ struct mainData {
         for (spider& enemy : spiders) {
             enemy.render(debug);
         }
-        if (s.snakeSize == totalApples + 1) {
-            DrawRectangle(0, 0, WIDTH, HEIGHT, (Color){0, 0, 0, 100});
-            DrawText("You got all the yerbs.\nYou won!", GRID, GRID, 1.3 * GRID, WHITE);
-        }
-        else if (s.snakeSize < 1) {
-            DrawRectangle(0, 0, WIDTH, HEIGHT, (Color){0, 0, 0, 100});
-            DrawText("Ow, oof, my grades!", GRID, GRID, 1.3 * GRID, WHITE);
-        }
         EndTextureMode();
     }
 
@@ -770,7 +762,14 @@ struct mainData {
         Rectangle dest = {0, 0, t->width, t->height};
         float rotation = 0;
         DrawTexturePro(canvas.texture, source, dest, camera, rotation, WHITE);
-
+        if (s.snakeSize == totalApples + 1) {
+            DrawRectangle(0, 0, WIDTH, HEIGHT, (Color){0, 0, 0, 100});
+            DrawText("You got all the yerbs.\nYou won!", GRID, GRID, 1.3 * GRID, WHITE);
+        }
+        else if (s.snakeSize < 1) {
+            DrawRectangle(0, 0, WIDTH, HEIGHT, (Color){0, 0, 0, 100});
+            DrawText("Ow, oof, my grades!", GRID, GRID, 1.3 * GRID, WHITE);
+        }
         EndDrawing();
         tickCount++;
     }
