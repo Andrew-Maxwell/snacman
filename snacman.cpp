@@ -7,6 +7,7 @@
 #include <sstream>
 #include <unordered_map>
 #include <vector>
+#include <map>
 
 #include "raylib.h"
 #include "raymath.h"
@@ -16,7 +17,7 @@
 
 #define WIDTH 800
 #define HEIGHT 600
-#define GRID 40
+#define GRID 32
 #define INDICATOR_THICKNESS 10
 #define SLOWTICK 24
 #define FASTTICK 12
@@ -27,6 +28,7 @@
 #define PATH 's'
 #define EMPTY '.'
 #define APPLE 'A'
+#define ENEMY 'E'
 
 using namespace std;
 
@@ -55,10 +57,10 @@ struct V2 {
     V2 operator*(int scalar) {
         return V2(x * scalar, y * scalar);
     }
-};
 
-struct spider {
-
+    int hash() {
+        return 10000 * y + x;
+    }
 };
 
 struct compass {
@@ -106,6 +108,20 @@ struct critter {
     compass c;
     vector<string> moveMap;
     list<segment> segments;
+
+    critter() {}
+
+    critter(V2 head, vector<string>& map) {
+        segments.push_front(segment(head, V2(0, 0), V2(0, 0)));
+        for (int i = 0; i < 4; i++) {
+            V2 adj = segments.begin()->pos + c.cardinal[i];
+            if (map[adj.y][adj.x] == WALL) {
+                makeMoveMap(adj, map);
+                segments.begin()->down = c.cardinal[i];
+                segments.begin()->forward = c.get(segments.begin()->down, 1);
+            }
+        }
+    }
 
     bool ok(V2 v) {
         return v.y >= 0 && v.y < moveMap.size() && v.x >= 0 && v.x < moveMap[v.y].size();
@@ -202,16 +218,7 @@ struct snake : public critter {
 
     snake() {}
 
-    snake(V2 head, vector<string>& map) {
-        segments.push_front(segment(head, V2(0, 0), V2(0, 0)));
-        for (int i = 0; i < 4; i++) {
-            V2 adj = segments.begin()->pos + c.cardinal[i];
-            if (map[adj.y][adj.x] == WALL) {
-                makeMoveMap(adj, map);
-                segments.begin()->down = c.cardinal[i];
-                segments.begin()->forward = c.get(segments.begin()->down, 1);
-            }
-        }
+    snake(V2 head, vector<string>& map) : critter(head, map) {
         initTextures();
     }
 
@@ -227,14 +234,13 @@ struct snake : public critter {
             segments.push_front(next);
         }
         V2 head = segments.begin()->pos;
-        // found apple, add a new segment
         if (map[head.y][head.x] == APPLE) {
             snakeSize++;
-            map[head.y][head.x] = EMPTY;
-            // remove apple from map
         }
-        // Remove any extra segments (Every tick unless found apple)
+        map[head.y][head.x] = SNAKE;
         while (segments.size() > snakeSize) {
+            V2 tail = segments.rbegin()->pos;
+            map[tail.y][tail.x] = EMPTY;
             segments.pop_back();
         }
     }
@@ -302,10 +308,11 @@ struct snake : public critter {
                 }
             }
         }
-        // draw snake
         int off = 0;
-        for (segment& s : segments) {
-            // draw sluggo
+        for (auto segIter = segments.rbegin(); segIter != segments.rend(); segIter++) {
+            //draw sluggo
+            segment& s = *segIter;
+            Vector2 center = {s.pos.x * GRID, s.pos.y * GRID};
             Texture2D* tex = nullptr;
             int sidesTouching = countSidesTouching(s);
             if (&s == &(segments.front())) {
@@ -372,9 +379,69 @@ struct snake : public critter {
 
 };
 
+struct spider : public critter {
+
+    void initTextures() {}
+
+    spider(V2 pos, vector<string>& map) : critter(pos, map) {
+        initTextures();
+        segments.push_front(getNextSegment());
+    }
+
+    void doTick(vector<string>& map) {
+        //Spider has 2 segments (to prevent passing through length-1 snake.)
+        // Check if either of those segments touching snake.
+        V2 head = segments.begin()->pos;
+        V2 tail = segments.rbegin()->pos;
+        if (map[head.y][head.x] == SNAKE || map[tail.y][tail.x] == SNAKE) {
+            cout << "You got caught by a spider!\n";
+            exit(0);
+        }
+        // Use DFS to search for snake markings
+        list<V2> Q;
+        Q.push_back(segments.begin()->pos);
+        unordered_map<int, V2> parents;
+        while (!Q.empty()) {
+            V2 next = *Q.begin();
+            Q.pop_front();
+            for (int i = 0; i < 4; i++) {
+                V2 adj = next + c.cardinal[i];
+                if (ok(adj) && moveMap[adj.y][adj.x] == PATH && parents.count(adj.hash()) == 0) {
+                    parents[adj.hash()] = next;
+                    Q.push_back(adj);
+                    if (map[adj.y][adj.x] == SNAKE) {
+                        while (parents[next.hash()] != head && next != head) {
+                            next = parents[next.hash()];
+                        }
+                        segments.begin()->forward = next - head;
+                        segment next = getNextSegment();
+                        segments.push_front(next);
+                        segments.pop_back();
+                    }
+                }
+            }
+        }
+    }
+
+    void render(bool debug) {
+        V2 head = segments.begin()->pos;
+        DrawCircle((head.x + 0.5) * GRID, (head.y + 0.5) * GRID, 0.5 * GRID, PURPLE);
+        if (debug) {
+            for (int row = 0; row < moveMap.size(); row++) {
+                for (int col = 0; col < moveMap[row].size(); col++) {
+                    if (moveMap[row][col] == PATH) {
+                        DrawRectangle(GRID * col, GRID * row, GRID, GRID, Fade(PURPLE, 0.5));
+                    }
+                }
+            }
+        }
+    }
+};
+
 struct mainData {
 
     vector<string> map;
+    list<spider> spiders;
     int mapWidth = 0;
     int tickCount = 0;
     bool pause = false;
@@ -382,6 +449,8 @@ struct mainData {
     Vector2 camera = {0, 0};
     bool moveCameraX, moveCameraY;
     snake s;
+    Texture2D dirt;
+    Texture2D dirtHorizontal;
 
     char& at(V2 v) {
         return map[v.y][v.x];
@@ -402,11 +471,16 @@ struct mainData {
         }
         string line;
         V2 newSnakeHead;
+        list<V2> newSpiders;
         while (getline(level, line)) {
             mapWidth = max((int)line.size(), mapWidth);
-            int snakePos = line.find(SNAKE);
-            if (snakePos != string::npos) {
-                newSnakeHead = V2(snakePos, map.size());
+            for (int i = 0; i < line.size(); i++) {
+                if (line[i] == SNAKE) {
+                    newSnakeHead = V2(i, map.size());
+                }
+                else if (line[i] == ENEMY) {
+                    newSpiders.push_back(V2(i, map.size()));
+                }
             }
             map.push_back(line);
         }
@@ -415,24 +489,75 @@ struct mainData {
         moveCameraX = mapWidth * GRID > WIDTH;
         moveCameraY = map.size() * GRID > HEIGHT;
         s = snake(newSnakeHead, map);
+        for (V2& pos : newSpiders) {
+            spiders.push_back(spider(pos, map));
+        }
+        dirt = LoadTexture("assets/dirt.png");
+        dirtHorizontal = LoadTexture("assets/dirt_horizontal.png");
     }
 
     void render(bool debug) {
         BeginTextureMode(canvas);
         ClearBackground(BLACK);
         // draw map
+        Rectangle background = {96, 64, 32, 32};
         for (int row = 0; row < map.size(); row++) {
             for (int col = 0; col < map[row].size(); col++) {
-                if (map[row][col] == WALL) {
-                    DrawRectangle(GRID * col, GRID * row, GRID, GRID, GRAY);
+                Vector2 dest = {col * GRID, row * GRID};
+                DrawTextureRec(dirt, background, dest, WHITE);
+                Rectangle source;
+                Texture2D* tex = &dirt;
+                V2 pos(col, row);
+                if (at(pos) == WALL) {
+                    int openAdjCount = 0;
+                    V2 sourceTile(1, 1);
+                    for (V2 adj : {V2(-1, 0), V2(1, 0), V2(0, -1), V2(0, 1)}) {
+                        if (s.ok(pos + adj) && (at(pos + adj) == EMPTY || at(pos + adj) == SNAKE || at(pos + adj) == APPLE || at(pos + adj) == ENEMY)) {
+                            sourceTile = sourceTile + adj;
+                            openAdjCount++;
+                        }
+                    }
+                    if (openAdjCount == 4) {
+                        source = {128, 0, 32, 32};
+                    }
+                    else if (openAdjCount == 3) {
+                        if (map[row + 1][col] == WALL) {
+                            source = {128, 0, 32, 32};
+                        }
+                        else if (map[row - 1][col] == WALL) {
+                            source = {128, 64, 32, 32};
+                        }
+                        else if (map[row][col + 1] == WALL) {
+                            source = {0, 0, 32, 32};
+                            tex = &dirtHorizontal;
+                        }
+                        else if (map[row][col - 1] == WALL) {
+                            source = {64, 0, 32, 32};
+                            tex = &dirtHorizontal;
+                        }
+                    }
+                    else if (openAdjCount == 2 && map[row][col + 1] == WALL && map[row][col - 1] == WALL) {
+                        source = {32, 0, 32, 32};
+                        tex = &dirtHorizontal;
+                    }
+                    else if (openAdjCount == 2 && map[row + 1][col] == WALL && map[row - 1][col] == WALL) {
+                        source = {128, 32, 32, 32};
+                    }
+                    else {
+                        source = (Rectangle){32 * sourceTile.x, 32 * sourceTile.y, 32, 32};
+                    }
+                    DrawTextureRec(*tex, source, dest, WHITE);
                 }
-                if (map[row][col] == APPLE) {
-                    DrawCircle((col + 0.5) * GRID, (row + 0.5) * GRID, GRID / 2, RED);
+                else if (at(pos) == APPLE) {
+                    DrawCircle((col + 0.5) * GRID, (row + 0.5) * GRID, 0.5 * GRID, RED);
                 }
             }
         }
         // draw snake
         s.render(debug);
+        for (spider& enemy : spiders) {
+            enemy.render(debug);
+        }
         EndTextureMode();
     }
 
@@ -440,8 +565,11 @@ struct mainData {
         BeginDrawing();
         //DO THE FOLLOWING AT TICK RATE
         if (tickCount % tickRate() == 0) {
+            for (spider& enemy : spiders) {
+                enemy.doTick(map);
+            }
             s.doTick(map);
-            render(true);
+            render(false);
         }
         //DO THE FOLLOWING AT 60FPS
         s.handleInput(map);
