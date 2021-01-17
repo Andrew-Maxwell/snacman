@@ -501,6 +501,7 @@ struct mainData {
     snake s;
     Texture2D dirt;
     Texture2D dirtHorizontal;
+    Texture2D yerb;
     int totalApples = 0;
 
     char& at(V2 v) {
@@ -548,6 +549,7 @@ struct mainData {
         }
         dirt = LoadTexture("assets/dirt.png");
         dirtHorizontal = LoadTexture("assets/dirt_horizontal.png");
+        yerb = LoadTexture("assets/yerb.png");
     }
 
     void generateIsland(V2 start, int size, list<V2>& newSpiders) {
@@ -697,7 +699,7 @@ struct mainData {
                     DrawTextureRec(*tex, source, dest, WHITE);
                 }
                 else if (at(pos) == APPLE) {
-                    DrawCircle((col + 0.5) * GRID, (row + 0.5) * GRID, 0.5 * GRID, RED);
+                    DrawTexture(yerb, (col+0.5)*GRID-yerb.width/2, (row+0.5)*GRID-yerb.height/2,  WHITE);
                 }
             }
         }
