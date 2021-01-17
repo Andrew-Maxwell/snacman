@@ -220,7 +220,7 @@ struct snake : public critter {
     void initTextures() {
         for (const string& name : {"head_0", "head_1", "body", "tail", "tail_inside_corner", "tail_outside_corner", "tail_u_turn", "body_inside_corner", "body_outside_corner", "body_u_turn"}) {
             stringstream filename;
-            filename << "assets/" << name << ".png";
+            filename << "resources/" << name << ".png";
             Image img = LoadImage(filename.str().c_str());
             ImageResize(&img, GRID, GRID);
             Texture2D tex = LoadTextureFromImage(img);
@@ -233,7 +233,7 @@ struct snake : public critter {
 
     snake(V2 head, vector<string>& map) : critter(head, map) {
         initTextures();
-        yerbSound = LoadSound("assets/sound/yerb.ogg");
+        yerbSound = LoadSound("resources/sound/yerb.ogg");
     }
 
     void doTick(vector<string>& map) {
@@ -327,7 +327,7 @@ struct snake : public critter {
                 }
             }
         }
-        int off = 0;
+//      int off = 0;
         for (auto segIter = segments.rbegin(); segIter != segments.rend(); segIter++) {
             //draw sluggo
             segment& s = *segIter;
@@ -335,7 +335,7 @@ struct snake : public critter {
             segIter2++;
             segment& s2 = *segIter2;
             Texture2D* tex = nullptr;
-            int sidesTouching = countSidesTouching(s);
+//          int sidesTouching = countSidesTouching(s);
             if (&s == &(segments.front())) {
                 tex = snakeSize > 1 ? &textures["head_1"] : &textures["head_0"];
             } else if (&s == &(segments.back())) {
@@ -405,7 +405,7 @@ struct snake : public critter {
                 DrawLineV(center, down, GREEN);
                 Vector2 forward = Vector2Add(center, Vector2Scale((Vector2){s.forward.x, s.forward.y}, GRID));
                 DrawLineV(center, forward, RED);
-                DrawText(TextFormat("segment %i: sides touching: %i", off, sidesTouching), 10, 20*(off++), 20, RED);
+//                DrawText(TextFormat("segment %i: sides touching: %i", off, sidesTouching), 10, 20*(off++), 20, RED);
                 // draw slime
                 for (V2 adj : {s.down, s.forward}) {
                     if ((adj.x == 0) && (adj.y == 0)) continue;
@@ -435,7 +435,7 @@ struct spider : public critter {
 
     Texture2D tex;
     void initTextures() {
-        tex = LoadTexture("assets/exam.png");
+        tex = LoadTexture("resources/exam.png");
     }
 
     spider(V2 pos, vector<string>& map) : critter(pos, map) {
@@ -555,10 +555,10 @@ struct mainData {
         for (V2& pos : newSpiders) {
             spiders.push_back(spider(pos, map));
         }
-        dirt = LoadTexture("assets/dirt.png");
-        dirtHorizontal = LoadTexture("assets/dirt_horizontal.png");
-        yerb = LoadTexture("assets/yerb.png");
-        slugSong = LoadSound("assets/sound/slugsong.ogg");
+        dirt = LoadTexture("resources/dirt.png");
+        dirtHorizontal = LoadTexture("resources/dirt_horizontal.png");
+        yerb = LoadTexture("resources/yerb.png");
+        slugSong = LoadSound("resources/sound/slugsong.ogg");
     }
 
     void playMusic() {
@@ -654,8 +654,10 @@ struct mainData {
                 }
             }
         }
-        dirt = LoadTexture("assets/dirt.png");
-        dirtHorizontal = LoadTexture("assets/dirt_horizontal.png");
+        dirt = LoadTexture("resources/dirt.png");
+        dirtHorizontal = LoadTexture("resources/dirt_horizontal.png");
+        yerb = LoadTexture("resources/yerb.png");
+        slugSong = LoadSound("resources/sound/slugsong.ogg");
     }
 
 
@@ -800,10 +802,15 @@ int main(int argc, char** argv) {
     InitWindow(WIDTH, HEIGHT, "snacman");
     InitAudioDevice();
     if (argc == 2) {
-        everything.readLevel(argv[1]);
+        if (argv[1] == string("random")) {
+            everything.generateLevel();
+        }
+        else {
+            everything.readLevel(argv[1]);
+        }
     }
     else {
-        everything.generateLevel();
+        everything.readLevel("resources/good.lvl");
     }
     everything.playMusic();
 #if defined(PLATFORM_WEB)

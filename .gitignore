@@ -1,3 +1,7 @@
 a.out
 snacman
 *.swp
+snacman.js
+snacman.html
+snacman.wasm
+snacman.data
