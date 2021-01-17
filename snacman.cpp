@@ -312,7 +312,6 @@ struct snake : public critter {
         for (auto segIter = segments.rbegin(); segIter != segments.rend(); segIter++) {
             //draw sluggo
             segment& s = *segIter;
-            Vector2 center = {s.pos.x * GRID, s.pos.y * GRID};
             Texture2D* tex = nullptr;
             int sidesTouching = countSidesTouching(s);
             if (&s == &(segments.front())) {
