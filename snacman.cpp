@@ -1,14 +1,17 @@
 #include <algorithm>
+#include <cassert>
 #include <climits>
 #include <fstream>
 #include <iostream>
 #include <list>
-#include <raylib.h>
-#include <raymath.h>
+#include <sstream>
+#include <unordered_map>
 #include <vector>
-#include <cassert>
+
+#include "raylib.h"
+#include "raymath.h"
 #if defined(PLATFORM_WEB)
-#include <emscripten.h>
+#include "emscripten.h"
 #endif
 
 #define WIDTH 800
@@ -66,7 +69,7 @@ struct compass {
         clockwise *= -1;
     }
 
-    V2 get(V2 current, int offset) {
+    V2 get(V2& current, int offset) {
         int index = -1;
         for (int i = 0; i < 4; i++) {
             if (cardinal[i] == current) {
@@ -75,6 +78,18 @@ struct compass {
         }
         index = ((index + offset * clockwise) + 4) % 4;
         return cardinal[index];
+    }
+
+    int cardinalToDegrees(V2& current) {
+        if (current == cardinal[0]) {
+            return 270;
+        } else if (current == cardinal[1]) {
+            return 0;
+        } else if (current == cardinal[2]) {
+            return 90;
+        } else {
+            return 180;
+        }
     }
 };
 
@@ -170,7 +185,20 @@ struct critter {
 
 struct snake : public critter {
     list<segment> moveQueue;
+    unordered_map<string, Texture2D> textures;
     int snakeSize = 1;
+
+    void initTextures() {
+        for (const string& name : {"head_0", "head_1", "body", "tail"}) {
+            stringstream filename;
+            filename << "assets/" << name << ".png";
+            Image img = LoadImage(filename.str().c_str());
+            ImageResize(&img, GRID, GRID);
+            Texture2D tex = LoadTextureFromImage(img);
+            textures[name] = tex;
+            UnloadImage(img);
+        }
+    }
 
     snake() {}
 
@@ -184,6 +212,7 @@ struct snake : public critter {
                 segments.begin()->forward = c.get(segments.begin()->down, 1);
             }
         }
+        initTextures();
     }
 
     void doTick(vector<string>& map) {
@@ -253,9 +282,23 @@ struct snake : public critter {
                 }
             }
         }
-        for (segment & s : segments) {
-            Vector2 center = {(s.pos.x + 0.5) * GRID, (s.pos.y + 0.5) * GRID};
-            DrawCircleV(center, GRID / 2, YELLOW);
+        // draw snake
+        for (segment& s : segments) {
+            Vector2 center = {s.pos.x * GRID, s.pos.y * GRID};
+            Texture2D* tex = nullptr;
+            if (&s == &(segments.front())) {
+                tex = snakeSize > 1 ? &textures["head_1"] : &textures["head_0"];
+            }
+            else if (&s == &(segments.back())) {
+                tex = &textures["tail"];
+            } else {
+                tex = &textures["body"];
+            }
+            int rotation = c.cardinalToDegrees(s.forward);
+            Rectangle sourceRec = {0, 0, tex->width, tex->height * -c.clockwise};
+            Rectangle destRec = {center.x + tex->width/2, center.y + tex->width/2, tex->width, tex->height};
+
+            DrawTexturePro(*tex, sourceRec, destRec, { tex->width/2, tex->height/2 }, rotation, WHITE);
             if (debug) {
                 Vector2 down = Vector2Add(center, Vector2Scale((Vector2){s.down.x, s.down.y}, GRID));
                 DrawLineV(center, down, GREEN);
@@ -273,9 +316,11 @@ struct snake : public critter {
                 int x = logicalPos.x * GRID + (adj.x < 0 ? GRID - INDICATOR_THICKNESS : 0);
                 int y = logicalPos.y * GRID + (adj.y < 0 ? GRID - INDICATOR_THICKNESS : 0);
                 // only draw on tiles that would be floor
-                if (moveMap[logicalPos.y][logicalPos.x] == WALL ||
-                    moveMap[logicalPos.y][logicalPos.x] == PATHWALL) {
-                    DrawRectangle(x, y , w, h, BLUE);
+                /* if (moveMap[logicalPos.y][logicalPos.x] == WALL || */
+                /*     moveMap[logicalPos.y][logicalPos.x] == PATHWALL) { */
+                /*     DrawRectangle(x, y , w, h, BLUE); */
+                if (moveMap[logicalPos.y][logicalPos.x] == PATHWALL) {
+                    DrawRectangle(x, y , w, h, YELLOW);
                 }
             }
         }
