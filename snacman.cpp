@@ -213,6 +213,7 @@ struct critter {
 struct snake : public critter {
     list<segment> moveQueue;
     unordered_map<string, Texture2D> textures;
+    Sound yerbSound;
     int snakeSize = 1;
 
     void initTextures() {
@@ -231,6 +232,7 @@ struct snake : public critter {
 
     snake(V2 head, vector<string>& map) : critter(head, map) {
         initTextures();
+        yerbSound = LoadSound("assets/sound/yerb.ogg");
     }
 
     void doTick(vector<string>& map) {
@@ -247,6 +249,7 @@ struct snake : public critter {
         V2 head = segments.begin()->pos;
         if (map[head.y][head.x] == APPLE) {
             snakeSize++;
+            PlaySound(yerbSound);
         }
         map[head.y][head.x] = SNAKE;
         while (segments.size() > snakeSize) {
@@ -502,6 +505,7 @@ struct mainData {
     Texture2D dirtHorizontal;
     Texture2D yerb;
     int totalApples = 0;
+    Sound slugSong;
 
     char& at(V2 v) {
         return map[v.y][v.x];
@@ -549,6 +553,11 @@ struct mainData {
         dirt = LoadTexture("assets/dirt.png");
         dirtHorizontal = LoadTexture("assets/dirt_horizontal.png");
         yerb = LoadTexture("assets/yerb.png");
+        slugSong = LoadSound("assets/sound/slugsong.ogg");
+    }
+
+    void playMusic() {
+        PlaySound(slugSong);
     }
 
     void render(bool debug) {
@@ -676,9 +685,11 @@ int main(int argc, char** argv) {
     }
 
     InitWindow(WIDTH, HEIGHT, "snacman");
+    InitAudioDevice();
     everything.readLevel(argv[1]);
+    everything.playMusic();
 #if defined(PLATFORM_WEB)
-    emscripten_set_main_loop(doEverything, 6, 1);
+    emscripten_set_main_loop(doEverything, 60, 1);
 #else
     SetTargetFPS(60);
     while (!WindowShouldClose()) {
