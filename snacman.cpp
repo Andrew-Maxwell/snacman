@@ -71,14 +71,19 @@ struct compass {
         clockwise *= -1;
     }
 
-    V2 get(V2& current, int offset) {
+    V2 get(V2& current, int offset, int clockwiseParam = 0) {
         int index = -1;
         for (int i = 0; i < 4; i++) {
             if (cardinal[i] == current) {
                 index = i;
             }
         }
-        index = ((index + offset * clockwise) + 4) % 4;
+        if (clockwiseParam == 0) {
+            index = ((index + offset * clockwise) + 8) % 4;
+        }
+        else {
+            index = ((index + offset * clockwiseParam) + 8) % 4;
+        }
         return cardinal[index];
     }
 
@@ -99,6 +104,7 @@ struct segment {
     V2 pos; //Absolute world position
     V2 forward; //Direction from previous segment to this segment
     V2 down;    //Direction from this segment to wall it's against
+    int clockwise;
 
     segment() {}
     segment(V2 newPos, V2 newForward, V2 newDown) : pos(newPos), forward(newForward), down(newDown) {}
@@ -152,7 +158,7 @@ struct critter {
         for (int row = 0; row < moveMap.size(); row++) {
             for (int col = 0; col < moveMap[row].size(); col++) {
                 V2 pos(col, row);
-                if (moveMap[pos.y][pos.x] == APPLE || moveMap[pos.y][pos.x] == EMPTY) {
+                if (moveMap[pos.y][pos.x] == APPLE || moveMap[pos.y][pos.x] == EMPTY || moveMap[pos.y][pos.x] == SNAKE || moveMap[pos.y][pos.x] == ENEMY) {
                     for (V2 diag : {V2(1, 1), V2(1, -1), V2(-1, 1), V2(-1, -1)}) {
                         V2 adj = pos + diag;
                         if (ok(adj) && moveMap[adj.y][adj.x] == PATHWALL) {
@@ -165,33 +171,38 @@ struct critter {
     }
 
     segment getNextSegment() {
-        int score = 0;
+        int score = -1;
         segment next;
         for (int i = -1; i < 3; i++) {
-            V2 nextForward = c.get(segments.begin()->forward, i);
+            // currentForward = entrance direction of previous tile
+            // nextForward = exit direction of previous tile = entrance direction of new tile
+            V2 currentForward = segments.begin()->forward;
+            V2 nextForward = c.get(currentForward, i);
             V2 nextDown = c.get(nextForward, -1);
             V2 nextPos = segments.begin()->pos + nextForward;
             V2 nextWall = nextPos + nextDown;
             if (moveMap[nextPos.y][nextPos.x] == PATH) {
-                // +8 points for not going backwards
-                int newScore = i != 2 ? 8 : 0;
-                // +8 points for not overlapping previous snake
-                newScore += 8;
+                // +8 points for not going around the path the wrong way
+                int newScore = moveMap[nextWall.y][nextWall.x] == EMPTY ? 0 : 8;
+                // +4 points for not going backwards
+                newScore += i != 2 ? 4 : 0;
+                // +2 points for not overlapping previous snake
+                newScore += 2;
                 for (segment& otherS : segments) {
                     if (otherS.pos == nextPos) {
-                        newScore -= 8;
+                        newScore -= 2;
                         break;
                     }
                 }
-                // *4 points for adhering to wall
-                newScore += moveMap[nextWall.y][nextWall.x] == PATHWALL ? 4 : 0;
+                // +1 points for adhering to wall
+                newScore += moveMap[nextWall.y][nextWall.x] == PATHWALL ? 1 : 0;
                 if (newScore > score) {
                     next = segment(nextPos, nextForward, nextDown);
+                    next.clockwise = c.clockwise;
                     score = newScore;
                 }
             }
         }
-        assert(score > 0);
         return next;
     }
 
@@ -266,7 +277,9 @@ struct snake : public critter {
                     break;
                 }
                 else {
-                    moveQueue.push_back(segment(swapWall, segments.begin()->forward, V2()));
+                    segment next(swapWall, up, up);
+                    next.clockwise = c.clockwise;
+                    moveQueue.push_back(next);
                 }
             }
             if (!canCross) {
@@ -312,12 +325,30 @@ struct snake : public critter {
         for (auto segIter = segments.rbegin(); segIter != segments.rend(); segIter++) {
             //draw sluggo
             segment& s = *segIter;
+            auto segIter2 = segIter;
+            segIter2++;
+            segment& s2 = *segIter2;
             Texture2D* tex = nullptr;
             int sidesTouching = countSidesTouching(s);
             if (&s == &(segments.front())) {
                 tex = snakeSize > 1 ? &textures["head_1"] : &textures["head_0"];
             } else if (&s == &(segments.back())) {
-                // check which tail segment we should be using
+                if (s2.forward == c.get(s.forward, -1, s.clockwise)) {
+                    tex = &textures["tail_outside_corner"];
+                }
+                else if (s2.forward == c.get(s.forward, 0, s.clockwise)) {
+                    tex = &textures["tail"];
+                }
+                else if (s2.forward == c.get(s.forward, 1, s.clockwise)) {
+                    tex = &textures["tail_inside_corner"];
+                }
+                else if (s2.forward == c.get(s.forward, 2, s.clockwise)) {
+                    tex = &textures["tail_u_turn"];
+                }
+                else {
+                    cerr << "Nonexistant angle\n";
+                }
+/*                // check which tail segment we should be using
                 if (sidesTouching == 0) {
                     tex = &textures["tail_outside_corner"];
                 } else if (sidesTouching == 2) {
@@ -326,9 +357,25 @@ struct snake : public critter {
                     tex = &textures["tail_u_turn"];
                 } else {
                     tex = &textures["tail"];
-                }
+                }*/
             } else {
                 // check which body segment we should be using
+                if (s2.forward == c.get(s.forward, -1, s.clockwise)) {
+                    tex = &textures["body_outside_corner"];
+                }
+                else if (s2.forward == c.get(s.forward, 0, s.clockwise)) {
+                    tex = &textures["body"];
+                }
+                else if (s2.forward == c.get(s.forward, 1, s.clockwise)) {
+                    tex = &textures["body_inside_corner"];
+                }
+                else if (s2.forward == c.get(s.forward, 2, s.clockwise)) {
+                    tex = &textures["body_u_turn"];
+                }
+                else {
+                    cerr << "Nonexistant tex" << s2.forward.x << " " << s2.forward.y << "\n";
+                }
+/*
                 if (sidesTouching == 0) {
                     tex = &textures["body_outside_corner"];
                 } else if (sidesTouching == 2) {
@@ -337,11 +384,11 @@ struct snake : public critter {
                     tex = &textures["body_u_turn"];
                 } else {
                     tex = &textures["body"];
-                }
+                }*/
             }
             Vector2 center = {s.pos.x * GRID + tex->width/2, s.pos.y * GRID + tex->width/2};
             int rotation = c.cardinalToDegrees(s.forward);
-            Rectangle sourceRec = {0, 0, tex->width, tex->height * -c.clockwise};
+            Rectangle sourceRec = {0, 0, tex->width, tex->height * -1 * s.clockwise};
             Rectangle destRec = {center.x, center.y, tex->width, tex->height};
 
             DrawTexturePro(*tex, sourceRec, destRec, { tex->width/2, tex->height/2 }, rotation, WHITE);
@@ -353,22 +400,22 @@ struct snake : public critter {
                 Vector2 forward = Vector2Add(center, Vector2Scale((Vector2){s.forward.x, s.forward.y}, GRID));
                 DrawLineV(center, forward, RED);
                 DrawText(TextFormat("segment %i: sides touching: %i", off, sidesTouching), 10, 20*(off++), 20, RED);
-            }
+                // draw slime
+                for (V2 adj : {s.down, s.forward}) {
+                    if ((adj.x == 0) && (adj.y == 0)) continue;
+                    int w = adj.x != 0 ? INDICATOR_THICKNESS : GRID;
+                    int h = adj.y != 0 ? INDICATOR_THICKNESS : GRID;
 
-            // draw slime
-            for (V2 adj : {s.down, s.forward}) {
-                if ((adj.x == 0) && (adj.y == 0)) continue;
-                int w = adj.x != 0 ? INDICATOR_THICKNESS : GRID;
-                int h = adj.y != 0 ? INDICATOR_THICKNESS : GRID;
-
-                V2 logicalPos = s.pos + adj;
-                // draw the indicator on the inside of the wall we are on
-                int x = logicalPos.x * GRID + (adj.x < 0 ? GRID - INDICATOR_THICKNESS : 0);
-                int y = logicalPos.y * GRID + (adj.y < 0 ? GRID - INDICATOR_THICKNESS : 0);
-                if (moveMap[logicalPos.y][logicalPos.x] == PATHWALL) {
-                    DrawRectangle(x, y , w, h, YELLOW);
+                    V2 logicalPos = s.pos + adj;
+                    // draw the indicator on the inside of the wall we are on
+                    int x = logicalPos.x * GRID + (adj.x < 0 ? GRID - INDICATOR_THICKNESS : 0);
+                    int y = logicalPos.y * GRID + (adj.y < 0 ? GRID - INDICATOR_THICKNESS : 0);
+                    if (moveMap[logicalPos.y][logicalPos.x] == PATHWALL) {
+                        DrawRectangle(x, y , w, h, YELLOW);
+                    }
                 }
             }
+
         }
     }
 
@@ -450,6 +497,7 @@ struct mainData {
     snake s;
     Texture2D dirt;
     Texture2D dirtHorizontal;
+    int totalApples = 0;
 
     char& at(V2 v) {
         return map[v.y][v.x];
@@ -479,6 +527,9 @@ struct mainData {
                 }
                 else if (line[i] == ENEMY) {
                     newSpiders.push_back(V2(i, map.size()));
+                }
+                else if (line[i] == APPLE) {
+                    totalApples++;
                 }
             }
             map.push_back(line);
@@ -563,11 +614,14 @@ struct mainData {
     void mainLoop() {
         BeginDrawing();
         //DO THE FOLLOWING AT TICK RATE
-        if (tickCount % tickRate() == 0) {
+        if (tickCount % tickRate() == 0 && s.snakeSize != totalApples) {
             for (spider& enemy : spiders) {
                 enemy.doTick(map);
             }
             s.doTick(map);
+            if (s.snakeSize == totalApples) {
+                cout << "You got all the apples, you won!";
+            }
             render(false);
         }
         //DO THE FOLLOWING AT 60FPS
