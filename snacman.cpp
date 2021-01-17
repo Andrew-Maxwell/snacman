@@ -294,26 +294,6 @@ struct snake : public critter {
         }
     }
 
-    int countSidesTouching(segment& s) {
-        int sidesTouching = 0;
-        // make sure 
-        bool forward = false;
-        int i = 0;
-        for (const V2& adj : {s.down, s.forward, {-s.down.x, -s.down.y}}) {
-            if ((adj.x == 0) && (adj.y == 0)) continue;
-
-            V2 logicalPos = s.pos + adj;
-            if (moveMap[logicalPos.y][logicalPos.x] == PATHWALL) {
-                if (i == 1) { forward = true; }
-                // don't count opposite sides if forward was not counted
-                if (i == 2 && !forward) { break; }
-                sidesTouching++;
-            }
-            i++;
-        }
-        return sidesTouching;
-    }
-
     void render(bool debug) {
         if (debug) {
             for (int row = 0; row < moveMap.size(); row++) {
@@ -327,7 +307,7 @@ struct snake : public critter {
                 }
             }
         }
-//      int off = 0;
+
         for (auto segIter = segments.rbegin(); segIter != segments.rend(); segIter++) {
             //draw sluggo
             segment& s = *segIter;
@@ -335,7 +315,6 @@ struct snake : public critter {
             segIter2++;
             segment& s2 = *segIter2;
             Texture2D* tex = nullptr;
-//          int sidesTouching = countSidesTouching(s);
             if (&s == &(segments.front())) {
                 tex = snakeSize > 1 ? &textures["head_1"] : &textures["head_0"];
             } else if (&s == &(segments.back())) {
@@ -354,16 +333,6 @@ struct snake : public critter {
                 else {
                     cerr << "Nonexistant angle\n";
                 }
-/*                // check which tail segment we should be using
-                if (sidesTouching == 0) {
-                    tex = &textures["tail_outside_corner"];
-                } else if (sidesTouching == 2) {
-                    tex = &textures["tail_inside_corner"];
-                } else if (sidesTouching == 3) {
-                    tex = &textures["tail_u_turn"];
-                } else {
-                    tex = &textures["tail"];
-                }*/
             } else {
                 // check which body segment we should be using
                 if (s2.forward == c.get(s.forward, -1, s.clockwise)) {
@@ -381,16 +350,6 @@ struct snake : public critter {
                 else {
                     cerr << "Nonexistant tex" << s2.forward.x << " " << s2.forward.y << "\n";
                 }
-/*
-                if (sidesTouching == 0) {
-                    tex = &textures["body_outside_corner"];
-                } else if (sidesTouching == 2) {
-                    tex = &textures["body_inside_corner"];
-                } else if (sidesTouching == 3) {
-                    tex = &textures["body_u_turn"];
-                } else {
-                    tex = &textures["body"];
-                }*/
             }
             Vector2 center = {s.pos.x * GRID + tex->width/2, s.pos.y * GRID + tex->width/2};
             int rotation = c.cardinalToDegrees(s.forward);
@@ -405,8 +364,7 @@ struct snake : public critter {
                 DrawLineV(center, down, GREEN);
                 Vector2 forward = Vector2Add(center, Vector2Scale((Vector2){s.forward.x, s.forward.y}, GRID));
                 DrawLineV(center, forward, RED);
-//                DrawText(TextFormat("segment %i: sides touching: %i", off, sidesTouching), 10, 20*(off++), 20, RED);
-                // draw slime
+                // draw side indicator
                 for (V2 adj : {s.down, s.forward}) {
                     if ((adj.x == 0) && (adj.y == 0)) continue;
                     int w = adj.x != 0 ? INDICATOR_THICKNESS : GRID;
@@ -716,7 +674,7 @@ struct mainData {
                     DrawTextureRec(*tex, source, dest, WHITE);
                 }
                 else if (at(pos) == APPLE) {
-                    DrawTexture(yerb, (col+0.5)*GRID-yerb.width/2, (row+0.5)*GRID-yerb.height/2,  WHITE);
+                    DrawTexture(yerb, (col+0.5)*GRID-yerb.width/2, (row+0.5)*GRID-yerb.height/2 + 2 *sin(tickCount),  WHITE);
                 }
             }
         }
@@ -726,6 +684,10 @@ struct mainData {
             enemy.render(debug);
         }
         EndTextureMode();
+    }
+
+    float logisticGPA() {
+        return 4.0 / (1 + exp(-0.33 * s.snakeSize));
     }
 
     void mainLoop() {
@@ -789,6 +751,8 @@ struct mainData {
         if (IsKeyPressed(KEY_R)) {
             restart = true;
         }
+        // draw GPA (score) meter
+        DrawText(TextFormat("GPA: %02.02f", logisticGPA()), WIDTH - 150, 10, GRID, WHITE);
         EndDrawing();
         tickCount++;
     }
