@@ -87,39 +87,17 @@ struct segment {
     segment(V2 newPos, V2 newForward, V2 newDown) : pos(newPos), forward(newForward), down(newDown) {}
 };
 
-struct mainData {
-
-    vector<string> map;
-    vector<string> moveMap;
-    int mapWidth = 0;
-    list<segment> snake;
-    list<segment> moveQueue;
-    list<spider> spiders;
-    int snakeSize = 1;
-    int tickCount = 0;
+struct critter {
     compass c;
-    bool pause = false;
-    RenderTexture2D canvas;
-    Vector2 camera = {0, 0};
-    bool moveCameraX, moveCameraY;
-
-    char& at(V2 v) {
-        return map[v.y][v.x];
-    }
+    vector<string> moveMap;
+    list<segment> segments;
 
     bool ok(V2 v) {
-        return v.y >= 0 && v.y < map.size() && v.x >= 0 && v.x < map[v.y].size();
-    }
-
-    // update rate for game logic is 60fps/tickRate()
-    int tickRate() {
-        if (pause) { return INT_MAX; }
-        else if (IsKeyDown(KEY_LEFT_SHIFT)) { return FASTTICK; }
-        else { return SLOWTICK; }
+        return v.y >= 0 && v.y < moveMap.size() && v.x >= 0 && v.x < moveMap[v.y].size();
     }
 
     // Generate which tiles the snake can traverse (adjacent to wall)
-    void makeMoveMap(V2 start) {
+    void makeMoveMap(V2 start, vector<string>& map) {
         moveMap = map;
         list<V2> Q;
         Q.push_back(start);
@@ -142,7 +120,6 @@ struct mainData {
         }
         for (int row = 0; row < moveMap.size(); row++) {
             for (int col = 0; col < moveMap[row].size(); col++) {
-                int adjCount = 0;
                 V2 pos(col, row);
                 if (moveMap[pos.y][pos.x] == APPLE || moveMap[pos.y][pos.x] == EMPTY) {
                     for (V2 diag : {V2(1, 1), V2(1, -1), V2(-1, 1), V2(-1, -1)}) {
@@ -156,59 +133,127 @@ struct mainData {
         }
     }
 
-    void readLevel(string levelName) {
-        ifstream level(levelName);
-        if (!level) {
-            cerr << "Couldn't open " << levelName << endl;
-            exit(EXIT_FAILURE);
-        }
-        string line;
-        while (getline(level, line)) {
-            mapWidth = max((int)line.size(), mapWidth);
-            int snakePos = line.find(SNAKE);
-            if (snakePos != string::npos) {
-                snake.push_front(segment(V2(snakePos, map.size()), V2(1, 0), V2(0, 0)));
+    segment getNextSegment() {
+        int score = 0;
+        segment next;
+        for (int i = -1; i < 3; i++) {
+            V2 nextForward = c.get(segments.begin()->forward, i);
+            V2 nextDown = c.get(nextForward, -1);
+            V2 nextPos = segments.begin()->pos + nextForward;
+            V2 nextWall = nextPos + nextDown;
+            if (moveMap[nextPos.y][nextPos.x] == PATH) {
+                // +8 points for not going backwards
+                int newScore = i != 2 ? 8 : 0;
+                // +8 points for not overlapping previous snake
+                newScore += 8;
+                for (segment& otherS : segments) {
+                    if (otherS.pos == nextPos) {
+                        newScore -= 8;
+                        break;
+                    }
+                }
+                // *4 points for adhering to wall
+                newScore += moveMap[nextWall.y][nextWall.x] == PATHWALL ? 4 : 0;
+                if (newScore > score) {
+                    next = segment(nextPos, nextForward, nextDown);
+                    score = newScore;
+                }
             }
-            map.push_back(line);
         }
-        level.close();
-        canvas = LoadRenderTexture(mapWidth * GRID, map.size() * GRID);
-        moveCameraX = mapWidth * GRID > WIDTH;
-        moveCameraY = map.size() * GRID > HEIGHT;
+        assert(score > 0);
+        return next;
+    }
+
+    virtual void render(bool debug) {}
+};
+
+
+struct snake : public critter {
+    list<segment> moveQueue;
+    int snakeSize = 1;
+
+    snake() {}
+
+    snake(V2 head, vector<string>& map) {
+        segments.push_front(segment(head, V2(0, 0), V2(0, 0)));
         for (int i = 0; i < 4; i++) {
-            V2 adj = snake.begin()->pos + c.cardinal[i];
-            if (at(adj) == WALL) {
-                makeMoveMap(adj);
-                snake.begin()->down = c.cardinal[i];
-                snake.begin()->forward = c.get(snake.begin()->down, 1);
+            V2 adj = segments.begin()->pos + c.cardinal[i];
+            if (map[adj.y][adj.x] == WALL) {
+                makeMoveMap(adj, map);
+                segments.begin()->down = c.cardinal[i];
+                segments.begin()->forward = c.get(segments.begin()->down, 1);
+            }
+        }
+    }
+
+    void doTick(vector<string>& map) {
+        //Snake movement: Wall following
+        if (!moveQueue.empty()) {
+            //Move queue is filled when we start crossing a gap
+            segments.push_front(*moveQueue.begin());
+            moveQueue.pop_front();
+        }
+        else {  //Wall following
+            segment next = getNextSegment();
+            segments.push_front(next);
+        }
+        V2 head = segments.begin()->pos;
+        // found apple, add a new segment
+        if (map[head.y][head.x] == APPLE) {
+            snakeSize++;
+            map[head.y][head.x] = EMPTY;
+            // remove apple from map
+        }
+        // Remove any extra segments (Every tick unless found apple)
+        while (segments.size() > snakeSize) {
+            segments.pop_back();
+        }
+    }
+
+    void handleInput(vector<string>& map) {
+        V2 head = segments.begin()->pos;
+        if (IsKeyPressed(KEY_SPACE) && moveQueue.empty()) {
+            //Crossing to opposite wall
+            V2 up = c.get(segments.begin()->down, 2);
+            bool canCross = false;
+            for (int i = 1; i < snakeSize + 1; i++) {
+                V2 swapWall = head + up * i;
+                for (segment& s : segments) {
+                    if (s.pos == swapWall) {
+                        break;
+                    }
+                }
+                if (map[swapWall.y][swapWall.x] == WALL) {
+                    canCross = true;
+                    makeMoveMap(swapWall, map);
+                    //Following opposite wall now
+                    c.reverse();
+                    break;
+                }
+                else {
+                    moveQueue.push_back(segment(swapWall, segments.begin()->forward, V2()));
+                }
+            }
+            if (!canCross) {
+                moveQueue.clear();
             }
         }
     }
 
     void render(bool debug) {
-        BeginTextureMode(canvas);
-        ClearBackground(BLACK);
-        // draw map
-        for (int row = 0; row < map.size(); row++) {
-            for (int col = 0; col < map[row].size(); col++) {
-                if (map[row][col] == WALL) {
-                    DrawRectangle(GRID * col, GRID * row, GRID, GRID, GRAY);
-                }
-                if (debug) {
+        if (debug) {
+            for (int row = 0; row < moveMap.size(); row++) {
+                for (int col = 0; col < moveMap[row].size(); col++) {
                     if (moveMap[row][col] == PATHWALL) {
                         DrawRectangle(GRID * col, GRID * row, GRID, GRID, BLUE);
                     }
                     else if (moveMap[row][col] == PATH) {
-                        DrawRectangle(GRID * col, GRID * row, GRID, GRID, GREEN);
+                        DrawRectangle(GRID * col, GRID * row, GRID, GRID, Fade(GREEN, 0.5));
                     }
-                }
-                if (map[row][col] == APPLE) {
-                    DrawCircle((col + 0.5) * GRID, (row + 0.5) * GRID, GRID / 2, RED);
                 }
             }
         }
-        // draw snake
-        for (segment & s : snake) {
+        for (segment & s : segments) {
             Vector2 center = {(s.pos.x + 0.5) * GRID, (s.pos.y + 0.5) * GRID};
             DrawCircleV(center, GRID / 2, YELLOW);
             if (debug) {
@@ -228,11 +273,81 @@ struct mainData {
                 int x = logicalPos.x * GRID + (adj.x < 0 ? GRID - INDICATOR_THICKNESS : 0);
                 int y = logicalPos.y * GRID + (adj.y < 0 ? GRID - INDICATOR_THICKNESS : 0);
                 // only draw on tiles that would be floor
-                if (map[logicalPos.y][logicalPos.x] == WALL) {
+                if (moveMap[logicalPos.y][logicalPos.x] == WALL ||
+                    moveMap[logicalPos.y][logicalPos.x] == PATHWALL) {
                     DrawRectangle(x, y , w, h, BLUE);
                 }
             }
         }
+    }
+
+    V2 head() {
+        return segments.begin()->pos;
+    }
+
+};
+
+struct mainData {
+
+    vector<string> map;
+    int mapWidth = 0;
+    int tickCount = 0;
+    bool pause = false;
+    RenderTexture2D canvas;
+    Vector2 camera = {0, 0};
+    bool moveCameraX, moveCameraY;
+    snake s;
+
+    char& at(V2 v) {
+        return map[v.y][v.x];
+    }
+
+    // update rate for game logic is 60fps/tickRate()
+    int tickRate() {
+        if (pause) { return INT_MAX; }
+        else if (IsKeyDown(KEY_LEFT_SHIFT)) { return FASTTICK; }
+        else { return SLOWTICK; }
+    }
+
+    void readLevel(string levelName) {
+        ifstream level(levelName);
+        if (!level) {
+            cerr << "Couldn't open " << levelName << endl;
+            exit(EXIT_FAILURE);
+        }
+        string line;
+        V2 newSnakeHead;
+        while (getline(level, line)) {
+            mapWidth = max((int)line.size(), mapWidth);
+            int snakePos = line.find(SNAKE);
+            if (snakePos != string::npos) {
+                newSnakeHead = V2(snakePos, map.size());
+            }
+            map.push_back(line);
+        }
+        level.close();
+        canvas = LoadRenderTexture(mapWidth * GRID, map.size() * GRID);
+        moveCameraX = mapWidth * GRID > WIDTH;
+        moveCameraY = map.size() * GRID > HEIGHT;
+        s = snake(newSnakeHead, map);
+    }
+
+    void render(bool debug) {
+        BeginTextureMode(canvas);
+        ClearBackground(BLACK);
+        // draw map
+        for (int row = 0; row < map.size(); row++) {
+            for (int col = 0; col < map[row].size(); col++) {
+                if (map[row][col] == WALL) {
+                    DrawRectangle(GRID * col, GRID * row, GRID, GRID, GRAY);
+                }
+                if (map[row][col] == APPLE) {
+                    DrawCircle((col + 0.5) * GRID, (row + 0.5) * GRID, GRID / 2, RED);
+                }
+            }
+        }
+        // draw snake
+        s.render(debug);
         EndTextureMode();
     }
 
@@ -240,85 +355,11 @@ struct mainData {
         BeginDrawing();
         //DO THE FOLLOWING AT TICK RATE
         if (tickCount % tickRate() == 0) {
-            //Snake movement: Wall following
-            if (!moveQueue.empty()) {
-                //Move queue is filled when we start crossing a gap
-                snake.push_front(*moveQueue.begin());
-                moveQueue.pop_front();
-            }
-            else {  //Wall following
-                int score = 0;
-                segment next;
-                for (int i = -1; i < 3; i++) {
-                    V2 nextForward = c.get(snake.begin()->forward, i);
-                    V2 nextDown = c.get(nextForward, -1);
-                    V2 nextPos = snake.begin()->pos + nextForward;
-                    V2 nextWall = nextPos + nextDown;
-                    if (moveMap[nextPos.y][nextPos.x] == PATH) {
-                        // +8 points for not going backwards
-                        int newScore = i != 2 ? 8 : 0;
-                        // +8 points for not overlapping previous snake
-                        newScore += 8;
-                        for (segment& otherS : snake) {
-                            if (otherS.pos == nextPos) {
-                                newScore -= 8;
-                                break;
-                            }
-                        }
-                        // *4 points for adhering to wall
-                        newScore += moveMap[nextWall.y][nextWall.x] == PATHWALL ? 4 : 0;
-                        if (newScore > score) {
-                            next = segment(nextPos, nextForward, nextDown);
-                            score = newScore;
-                        }
-                    }
-                }
-                assert(score > 0);
-                snake.push_front(next);
-            }
-            V2 head = snake.begin()->pos;
-            // found apple, add a new segment
-            if (map[head.y][head.x] == APPLE) {
-                snakeSize++;
-                map[head.y][head.x] = EMPTY;
-                // remove apple from map
-            }
-            // Remove any extra segments (Every tick unless found apple)
-            while (snake.size() > snakeSize) {
-                V2 tail = snake.rbegin()->pos;
-                snake.pop_back();
-            }
+            s.doTick(map);
             render(true);
         }
         //DO THE FOLLOWING AT 60FPS
-
-        V2 head = snake.begin()->pos;
-        if (IsKeyPressed(KEY_SPACE) && moveQueue.empty()) {
-            //Crossing to opposite wall
-            V2 up = c.get(snake.begin()->down, 2);
-            bool canCross = false;
-            for (int i = 1; i < snakeSize + 1; i++) {
-                V2 swapWall = head + up * i;
-                for (segment& s : snake) {
-                    if (s.pos == swapWall) {
-                        break;
-                    }
-                }
-                if (map[swapWall.y][swapWall.x] == WALL) {
-                    canCross = true;
-                    makeMoveMap(swapWall);
-                    //Following opposite wall now
-                    c.reverse();
-                    break;
-                }
-                else {
-                    moveQueue.push_back(segment(swapWall, snake.begin()->forward, V2()));
-                }
-            }
-            if (!canCross) {
-                moveQueue.clear();
-            }
-        }
+        s.handleInput(map);
         // debug: pause the game if we press backspace
         if (IsKeyPressed(KEY_BACKSPACE)) {
             // toggle pause
@@ -328,10 +369,10 @@ struct mainData {
         //Update camera position to keep snake head near center of screen
         Vector2 targetCamera = camera;
         if (moveCameraX) {
-            targetCamera.x = min(mapWidth * GRID - WIDTH, max(0, int((head.x + 0.5) * GRID - WIDTH / 2)));
+            targetCamera.x = min(mapWidth * GRID - WIDTH, max(0, int((s.head().x + 0.5) * GRID - WIDTH / 2)));
         }
         if (moveCameraY) {
-            targetCamera.y = min((int)map.size() * GRID - HEIGHT, max(0, int((head.y + 0.5) * GRID - HEIGHT / 2)));
+            targetCamera.y = min((int)map.size() * GRID - HEIGHT, max(0, int((s.head().y + 0.5) * GRID - HEIGHT / 2)));
         }
         Vector2 cameraMove = Vector2Subtract(targetCamera, camera);
         camera = Vector2Add(camera, Vector2Scale(cameraMove, 0.02));
