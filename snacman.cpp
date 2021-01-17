@@ -189,7 +189,7 @@ struct snake : public critter {
     int snakeSize = 1;
 
     void initTextures() {
-        for (const string& name : {"head_0", "head_1", "body", "tail"}) {
+        for (const string& name : {"head_0", "head_1", "body", "tail", "tail_inside_corner", "tail_outside_corner", "tail_u_turn", "body_inside_corner", "body_outside_corner", "body_u_turn"}) {
             stringstream filename;
             filename << "assets/" << name << ".png";
             Image img = LoadImage(filename.str().c_str());
@@ -269,6 +269,26 @@ struct snake : public critter {
         }
     }
 
+    int countSidesTouching(segment& s) {
+        int sidesTouching = 0;
+        // make sure 
+        bool forward = false;
+        int i = 0;
+        for (const V2& adj : {s.down, s.forward, {-s.down.x, -s.down.y}}) {
+            if ((adj.x == 0) && (adj.y == 0)) continue;
+
+            V2 logicalPos = s.pos + adj;
+            if (moveMap[logicalPos.y][logicalPos.x] == PATHWALL) {
+                if (i == 1) { forward = true; }
+                // don't count opposite sides if forward was not counted
+                if (i == 2 && !forward) { break; }
+                sidesTouching++;
+            }
+            i++;
+        }
+        return sidesTouching;
+    }
+
     void render(bool debug) {
         if (debug) {
             for (int row = 0; row < moveMap.size(); row++) {
@@ -283,29 +303,53 @@ struct snake : public critter {
             }
         }
         // draw snake
+        int off = 0;
         for (segment& s : segments) {
-            Vector2 center = {s.pos.x * GRID, s.pos.y * GRID};
+            // draw sluggo
             Texture2D* tex = nullptr;
+            int sidesTouching = countSidesTouching(s);
             if (&s == &(segments.front())) {
                 tex = snakeSize > 1 ? &textures["head_1"] : &textures["head_0"];
-            }
-            else if (&s == &(segments.back())) {
-                tex = &textures["tail"];
+            } else if (&s == &(segments.back())) {
+                // check which tail segment we should be using
+                if (sidesTouching == 0) {
+                    tex = &textures["tail_outside_corner"];
+                } else if (sidesTouching == 2) {
+                    tex = &textures["tail_inside_corner"];
+                } else if (sidesTouching == 3) {
+                    tex = &textures["tail_u_turn"];
+                } else {
+                    tex = &textures["tail"];
+                }
             } else {
-                tex = &textures["body"];
+                // check which body segment we should be using
+                if (sidesTouching == 0) {
+                    tex = &textures["body_outside_corner"];
+                } else if (sidesTouching == 2) {
+                    tex = &textures["body_inside_corner"];
+                } else if (sidesTouching == 3) {
+                    tex = &textures["body_u_turn"];
+                } else {
+                    tex = &textures["body"];
+                }
             }
+            Vector2 center = {s.pos.x * GRID + tex->width/2, s.pos.y * GRID + tex->width/2};
             int rotation = c.cardinalToDegrees(s.forward);
             Rectangle sourceRec = {0, 0, tex->width, tex->height * -c.clockwise};
-            Rectangle destRec = {center.x + tex->width/2, center.y + tex->width/2, tex->width, tex->height};
+            Rectangle destRec = {center.x, center.y, tex->width, tex->height};
 
             DrawTexturePro(*tex, sourceRec, destRec, { tex->width/2, tex->height/2 }, rotation, WHITE);
+
+            // draw debug overlay
             if (debug) {
                 Vector2 down = Vector2Add(center, Vector2Scale((Vector2){s.down.x, s.down.y}, GRID));
                 DrawLineV(center, down, GREEN);
                 Vector2 forward = Vector2Add(center, Vector2Scale((Vector2){s.forward.x, s.forward.y}, GRID));
                 DrawLineV(center, forward, RED);
+                DrawText(TextFormat("segment %i: sides touching: %i", off, sidesTouching), 10, 20*(off++), 20, RED);
             }
-            // draw indicator of which side we are on
+
+            // draw slime
             for (V2 adj : {s.down, s.forward}) {
                 if ((adj.x == 0) && (adj.y == 0)) continue;
                 int w = adj.x != 0 ? INDICATOR_THICKNESS : GRID;
@@ -315,10 +359,6 @@ struct snake : public critter {
                 // draw the indicator on the inside of the wall we are on
                 int x = logicalPos.x * GRID + (adj.x < 0 ? GRID - INDICATOR_THICKNESS : 0);
                 int y = logicalPos.y * GRID + (adj.y < 0 ? GRID - INDICATOR_THICKNESS : 0);
-                // only draw on tiles that would be floor
-                /* if (moveMap[logicalPos.y][logicalPos.x] == WALL || */
-                /*     moveMap[logicalPos.y][logicalPos.x] == PATHWALL) { */
-                /*     DrawRectangle(x, y , w, h, BLUE); */
                 if (moveMap[logicalPos.y][logicalPos.x] == PATHWALL) {
                     DrawRectangle(x, y , w, h, YELLOW);
                 }
