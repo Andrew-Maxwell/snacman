@@ -844,7 +844,7 @@ int main(int argc, char** argv) {
 #else
     SetTargetFPS(60);
     while (!WindowShouldClose()) {
-        doEverything()
+        doEverything();
 
     }
 #endif
