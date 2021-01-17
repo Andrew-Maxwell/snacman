@@ -510,7 +510,7 @@ struct mainData {
     Texture2D dirtHorizontal;
     Texture2D yerb;
     int totalApples = 0;
-    Sound slugSong;
+    Music slugSong;
 
     char& at(V2 v) {
         return map[v.y][v.x];
@@ -523,7 +523,19 @@ struct mainData {
         else { return SLOWTICK; }
     }
 
+    void initAssets() {
+        dirt = LoadTexture("assets/dirt.png");
+        dirtHorizontal = LoadTexture("assets/dirt_horizontal.png");
+        yerb = LoadTexture("assets/yerb.png");
+        slugSong = LoadMusicStream("assets/sound/slugsong.ogg");
+    }
+
+    void playMusic() {
+        PlayMusicStream(slugSong);
+    }
+
     void readLevel(string levelName) {
+        map.clear();
         ifstream level(levelName);
         if (!level) {
             cerr << "Couldn't open " << levelName << endl;
@@ -555,14 +567,8 @@ struct mainData {
         for (V2& pos : newSpiders) {
             spiders.push_back(spider(pos, map));
         }
-        dirt = LoadTexture("assets/dirt.png");
-        dirtHorizontal = LoadTexture("assets/dirt_horizontal.png");
-        yerb = LoadTexture("assets/yerb.png");
-        slugSong = LoadSound("assets/sound/slugsong.ogg");
-    }
-
-    void playMusic() {
-        PlaySound(slugSong);
+        // set up everything else
+        initAssets();
     }
 
     void generateIsland(V2 start, int size, list<V2>& newSpiders) {
@@ -654,8 +660,7 @@ struct mainData {
                 }
             }
         }
-        dirt = LoadTexture("assets/dirt.png");
-        dirtHorizontal = LoadTexture("assets/dirt_horizontal.png");
+        initAssets();
     }
 
 
@@ -724,10 +729,12 @@ struct mainData {
         if (s.snakeSize == totalApples + 1) {
             DrawRectangle(0, 0, WIDTH, HEIGHT, (Color){0, 0, 0, 100});
             DrawText("You got all the yerbs.\nYou won!", GRID, GRID, 1.3 * GRID, WHITE);
+            DrawText("Press R to play again!", GRID, GRID + 120, 1.3 * GRID, GREEN);
         }
         else if (s.snakeSize < 1) {
             DrawRectangle(0, 0, WIDTH, HEIGHT, (Color){0, 0, 0, 100});
             DrawText("Ow, oof, my grades!", GRID, GRID, 1.3 * GRID, WHITE);
+            DrawText("Press R to restart.", GRID, GRID + 120, 1.3 * GRID, RED);
         }
         EndTextureMode();
     }
@@ -753,6 +760,7 @@ struct mainData {
             render(false);
         }
         //DO THE FOLLOWING AT 60FPS
+        UpdateMusicStream(slugSong);
         s.handleInput(map);
         // debug: pause the game if we press backspace
         if (IsKeyPressed(KEY_BACKSPACE)) {
@@ -791,6 +799,16 @@ void doEverything() {
     everything.mainLoop();
 }
 
+void init(int argc, char** argv) {
+
+    if (argc == 2) {
+        everything.readLevel(argv[1]);
+    }
+    else {
+        everything.generateLevel();
+    }
+}
+
 int main(int argc, char** argv) {
 
     if (argc > 2) {
@@ -800,12 +818,8 @@ int main(int argc, char** argv) {
 
     InitWindow(WIDTH, HEIGHT, "snacman");
     InitAudioDevice();
-    if (argc == 2) {
-        everything.readLevel(argv[1]);
-    }
-    else {
-        everything.generateLevel();
-    }
+    init(argc, argv);
+
     everything.playMusic();
 #if defined(PLATFORM_WEB)
     emscripten_set_main_loop(doEverything, 60, 1);
@@ -813,6 +827,11 @@ int main(int argc, char** argv) {
     SetTargetFPS(60);
     while (!WindowShouldClose()) {
         everything.mainLoop();
+
+        // restart if we press R 
+        if (IsKeyPressed(KEY_R)) {
+            init(argc, argv);
+        }
     }
 #endif
 }
