@@ -426,7 +426,10 @@ struct snake : public critter {
 
 struct spider : public critter {
 
-    void initTextures() {}
+    Texture2D tex;
+    void initTextures() {
+        tex = LoadTexture("assets/exam.png");
+    }
 
     spider(V2 pos, vector<string>& map) : critter(pos, map) {
         initTextures();
@@ -470,7 +473,8 @@ struct spider : public critter {
 
     void render(bool debug) {
         V2 head = segments.begin()->pos;
-        DrawCircle((head.x + 0.5) * GRID, (head.y + 0.5) * GRID, 0.5 * GRID, PURPLE);
+        /* DrawCircle((head.x + 0.5) * GRID, (head.y + 0.5) * GRID, 0.5 * GRID, PURPLE); */
+        DrawTexture(tex, (head.x+0.5)*GRID-tex.width/2, (head.y+0.5)*GRID-tex.height/2,  WHITE);
         if (debug) {
             for (int row = 0; row < moveMap.size(); row++) {
                 for (int col = 0; col < moveMap[row].size(); col++) {
