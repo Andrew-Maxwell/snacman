@@ -496,7 +496,8 @@ struct spider : public critter {
 };
 
 struct mainData {
-
+    int argc;
+    char** argv;
     vector<string> map;
     list<spider> spiders;
     int mapWidth = 0;
@@ -510,7 +511,8 @@ struct mainData {
     Texture2D dirtHorizontal;
     Texture2D yerb;
     int totalApples = 0;
-    Sound slugSong;
+    Music slugSong;
+    bool restart = false;
 
     char& at(V2 v) {
         return map[v.y][v.x];
@@ -523,7 +525,19 @@ struct mainData {
         else { return SLOWTICK; }
     }
 
+    void initAssets() {
+        dirt = LoadTexture("resources/dirt.png");
+        dirtHorizontal = LoadTexture("resources/dirt_horizontal.png");
+        yerb = LoadTexture("resources/yerb.png");
+        slugSong = LoadMusicStream("resources/sound/slugsong.ogg");
+    }
+
+    void playMusic() {
+        PlayMusicStream(slugSong);
+    }
+
     void readLevel(string levelName) {
+        map.clear();
         ifstream level(levelName);
         if (!level) {
             cerr << "Couldn't open " << levelName << endl;
@@ -555,14 +569,6 @@ struct mainData {
         for (V2& pos : newSpiders) {
             spiders.push_back(spider(pos, map));
         }
-        dirt = LoadTexture("resources/dirt.png");
-        dirtHorizontal = LoadTexture("resources/dirt_horizontal.png");
-        yerb = LoadTexture("resources/yerb.png");
-        slugSong = LoadSound("resources/sound/slugsong.ogg");
-    }
-
-    void playMusic() {
-        PlaySound(slugSong);
     }
 
     void generateIsland(V2 start, int size, list<V2>& newSpiders) {
@@ -654,10 +660,6 @@ struct mainData {
                 }
             }
         }
-        dirt = LoadTexture("resources/dirt.png");
-        dirtHorizontal = LoadTexture("resources/dirt_horizontal.png");
-        yerb = LoadTexture("resources/yerb.png");
-        slugSong = LoadSound("resources/sound/slugsong.ogg");
     }
 
 
@@ -747,6 +749,7 @@ struct mainData {
             render(false);
         }
         //DO THE FOLLOWING AT 60FPS
+        UpdateMusicStream(slugSong);
         s.handleInput(map);
         // debug: pause the game if we press backspace
         if (IsKeyPressed(KEY_BACKSPACE)) {
@@ -776,10 +779,15 @@ struct mainData {
         if (s.snakeSize == totalApples + 1) {
             DrawRectangle(0, 0, WIDTH, HEIGHT, (Color){0, 0, 0, 100});
             DrawText("You got all the yerbs.\nYou won!", GRID, GRID, 1.3 * GRID, WHITE);
+            DrawText("Press R to play again!", GRID, GRID + 120, 1.3 * GRID, GREEN);
         }
         else if (s.snakeSize < 1) {
             DrawRectangle(0, 0, WIDTH, HEIGHT, (Color){0, 0, 0, 100});
             DrawText("Ow, oof, my grades!", GRID, GRID, 1.3 * GRID, WHITE);
+            DrawText("Press R to restart.", GRID, GRID + 120, 1.3 * GRID, RED);
+        }
+        if (IsKeyPressed(KEY_R)) {
+            restart = true;
         }
         EndDrawing();
         tickCount++;
@@ -787,20 +795,13 @@ struct mainData {
 
 };
 
+
 mainData everything;
-void doEverything() {
-    everything.mainLoop();
-}
-
-int main(int argc, char** argv) {
-
-    if (argc > 2) {
-        cerr << "Usage: " << argv[0] << "<level file>\n";
-        exit(EXIT_FAILURE);
-    }
-
-    InitWindow(WIDTH, HEIGHT, "snacman");
-    InitAudioDevice();
+void initEverything(int argc, char** argv) {
+    everything = mainData();
+    everything.initAssets();
+    everything.argc = argc;
+    everything.argv = argv;
     if (argc == 2) {
         if (argv[1] == string("random")) {
             everything.generateLevel();
@@ -813,12 +814,38 @@ int main(int argc, char** argv) {
         everything.readLevel("resources/good.lvl");
     }
     everything.playMusic();
+}
+
+void doEverything() {
+    everything.mainLoop();
+    // restart if we press R 
+    if (everything.restart) {
+        everything.restart = false;
+        int argc = everything.argc;
+        char** argv = everything.argv;
+        initEverything(argc, argv);
+    }
+}
+
+
+int main(int argc, char** argv) {
+
+    if (argc > 2) {
+        cerr << "Usage: " << argv[0] << "<level file>\n";
+        exit(EXIT_FAILURE);
+    }
+
+    InitWindow(WIDTH, HEIGHT, "snacman");
+    InitAudioDevice();
+    initEverything(argc, argv);
+
 #if defined(PLATFORM_WEB)
     emscripten_set_main_loop(doEverything, 60, 1);
 #else
     SetTargetFPS(60);
     while (!WindowShouldClose()) {
-        everything.mainLoop();
+        doEverything()
+
     }
 #endif
 }
