@@ -2,9 +2,6 @@ the big problems are probably:
     - Enemy AI (DFS search should be appropriate, maybe w/ caching)
     - Level generation
     - Display code (can use sprite pack)
-other things:
-    - Camera for different-sized levels: Scrolling? Scaling?
-    - Crossing larger gaps if you have a longer snake
 Stretch:
     - Rare yerb which turn into "santa cruz" mode
         - Snake becomes banana slug
