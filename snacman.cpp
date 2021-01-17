@@ -430,7 +430,10 @@ struct snake : public critter {
 
 struct spider : public critter {
 
-    void initTextures() {}
+    Texture2D tex;
+    void initTextures() {
+        tex = LoadTexture("assets/exam.png");
+    }
 
     spider(V2 pos, vector<string>& map) : critter(pos, map) {
         initTextures();
@@ -475,7 +478,8 @@ struct spider : public critter {
 
     void render(bool debug) {
         V2 head = segments.begin()->pos;
-        DrawCircle((head.x + 0.5) * GRID, (head.y + 0.5) * GRID, 0.5 * GRID, PURPLE);
+        /* DrawCircle((head.x + 0.5) * GRID, (head.y + 0.5) * GRID, 0.5 * GRID, PURPLE); */
+        DrawTexture(tex, (head.x+0.5)*GRID-tex.width/2, (head.y+0.5)*GRID-tex.height/2,  WHITE);
         if (debug) {
             for (int row = 0; row < moveMap.size(); row++) {
                 for (int col = 0; col < moveMap[row].size(); col++) {
@@ -501,6 +505,7 @@ struct mainData {
     snake s;
     Texture2D dirt;
     Texture2D dirtHorizontal;
+    Texture2D yerb;
     int totalApples = 0;
 
     char& at(V2 v) {
@@ -548,6 +553,7 @@ struct mainData {
         }
         dirt = LoadTexture("assets/dirt.png");
         dirtHorizontal = LoadTexture("assets/dirt_horizontal.png");
+        yerb = LoadTexture("assets/yerb.png");
     }
 
     void generateIsland(V2 start, int size, list<V2>& newSpiders) {
@@ -697,7 +703,7 @@ struct mainData {
                     DrawTextureRec(*tex, source, dest, WHITE);
                 }
                 else if (at(pos) == APPLE) {
-                    DrawCircle((col + 0.5) * GRID, (row + 0.5) * GRID, 0.5 * GRID, RED);
+                    DrawTexture(yerb, (col+0.5)*GRID-yerb.width/2, (row+0.5)*GRID-yerb.height/2,  WHITE);
                 }
             }
         }
